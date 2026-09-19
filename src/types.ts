@@ -131,13 +131,21 @@ export interface LinkItem {
   pinned: boolean;
 }
 
+export interface QuestionFolder {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string; // HEX color or tailwind color code
+  createdAt?: string;
+}
+
 export interface QuizQuestion {
   id: string;
   question: string;
   options: string[]; // 4 options
   correctIndex: number; // 0, 1, 2, 3
   subject?: string;
-  category?: string; // e.g. "Tuần 1", "Tuần 2", "Ngày 18/09/2026", "Ôn tập Bài 1"
+  folderId?: string; // ID of QuestionFolder
   rewardCoins?: number; // default 2 xu
   explanation?: string;
 }
@@ -147,13 +155,11 @@ export interface AppSettings {
   filmExclude: boolean;
   tickLast10: boolean;
   timerColor: string;
-  githubRepoUrl?: string;
 }
 
 export interface AppState {
   version: number;
   ownerUserId?: string; // ID của tài khoản giáo viên sở hữu không gian làm việc này
-  lastGithubUpdateVersion?: string;
   activeClassId: string;
   currentPage: string;
   teacher: TeacherProfile;
@@ -176,11 +182,11 @@ export interface AppState {
   wheelEffect?: string;
   wheelGroup?: 'all' | 'favorite';
   quizQuestions?: QuizQuestion[];
-  quizCategories?: string[]; // Danh sách các thư mục / danh mục lưu trữ câu hỏi (ví dụ: Tuần 1, Tuần 2, Ngày 18/09/2026)
+  questionFolders?: QuestionFolder[];
   wheelQuizEnabled?: boolean;
   wheelQuizTimer?: number; // seconds, e.g. 15
   wheelQuizSubject?: string; // 'all' or specific subject
-  wheelQuizCategory?: string; // 'all' or specific category/folder name (e.g. 'Tuần 1', 'Ngày 18/09/2026')
+  wheelQuizFolderId?: string; // 'all', 'uncategorized', or specific folder ID
   wheelQuizShuffleOptions?: boolean; // Tự động đảo thứ tự các đáp án A B C D khi hiển thị
   usedQuizQuestionIds?: string[]; // IDs of questions already asked, to ensure no duplicates
 }
@@ -193,7 +199,6 @@ export const DEFAULT_SUBJECTS: string[] = [
   'Tự nhiên & Xã hội',
   'Khoa học',
   'Lịch sử & Địa lý',
-  'Tin học và Công nghệ',
   'Tin học',
   'Công nghệ',
   'Mĩ thuật',

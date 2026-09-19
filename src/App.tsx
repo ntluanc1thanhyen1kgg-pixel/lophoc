@@ -22,7 +22,6 @@ import { LoginScreen } from './components/LoginScreen';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { GuideModal } from './components/GuideModal';
-import { GitHubUpdateModal } from './components/GitHubUpdateModal';
 
 import { HomeTab } from './components/tabs/HomeTab';
 import { AccountsTab } from './components/tabs/AccountsTab';
@@ -50,7 +49,6 @@ export default function App() {
   const [savedTime, setSavedTime] = useState<string>('vừa xong');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [guideModalOpen, setGuideModalOpen] = useState(false);
-  const [githubModalOpen, setGithubModalOpen] = useState(false);
 
   // Initial load of users & state from Firestore
   useEffect(() => {
@@ -354,7 +352,6 @@ export default function App() {
           currentUser={currentUser}
           onLogout={handleLogout}
           dbConnected={dbConnected}
-          onOpenGithubModal={() => setGithubModalOpen(true)}
         />
 
         {/* Tab content area */}
@@ -468,7 +465,6 @@ export default function App() {
               onUpdateState={handleUpdateState}
               onResetState={handleResetState}
               currentUser={currentUser}
-              onOpenGithubModal={() => setGithubModalOpen(true)}
             />
           )}
 
@@ -485,14 +481,6 @@ export default function App() {
       <GuideModal
         isOpen={guideModalOpen}
         onClose={() => setGuideModalOpen(false)}
-      />
-
-      {/* GitHub Update Modal */}
-      <GitHubUpdateModal
-        isOpen={githubModalOpen}
-        onClose={() => setGithubModalOpen(false)}
-        state={state}
-        onUpdateState={handleUpdateState}
       />
     </div>
   );

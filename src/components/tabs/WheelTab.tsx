@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Sparkles, Volume2, RotateCcw, Award, Trash2, HelpCircle, Clock, BookOpen, Shuffle } from 'lucide-react';
+import { Sparkles, Volume2, RotateCcw, Award, Trash2, HelpCircle, Clock, BookOpen, Shuffle, Folder } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { AppState, Student, WHEEL_EFFECTS, QuizQuestion } from '../../types';
+import { AppState, Student, WHEEL_EFFECTS, QuizQuestion, QuestionFolder } from '../../types';
 import { DEFAULT_QUIZ_QUESTIONS } from '../../data/defaultQuestions';
+import { DEFAULT_QUESTION_FOLDERS, uid } from '../../utils/helpers';
 import { Avatar } from '../Avatar';
-import { uid } from '../../utils/helpers';
 import { playCelebration, playBeep } from '../../utils/audio';
 import { WheelQuizModal } from './wheel/WheelQuizModal';
 import { QuestionBankModal } from './wheel/QuestionBankModal';
@@ -42,47 +42,21 @@ export const WheelTab: React.FC<WheelTabProps> = ({ state, onUpdateState }) => {
     ? state.quizQuestions
     : DEFAULT_QUIZ_QUESTIONS;
 
-  const quizCategoriesList = Array.from(
-    new Set([
-      'Tuần 1',
-      'Tuần 2',
-      'Tuần 3',
-      'Tuần 4',
-      'Ngày 18/09/2026',
-      'Ôn tập Tổng hợp',
-      ...(state.quizCategories || []),
-      ...quizQuestionsList.map((q) => q.category).filter((c): c is string => Boolean(c))
-    ])
-  );
+  // Filter pool by chosen subject
+  const currentSubjectPool = state.wheelQuizSubject && state.wheelQuizSubject !== 'all'
+    ? quizQuestionsList.filter((q) => q.subject === state.wheelQuizSubject)
+    : quizQuestionsList;
 
-  // Filter pool by chosen subject & chosen category/folder
-  const currentSubjectAndCategoryPool = quizQuestionsList.filter((q) => {
-    let matchSub = true;
-    if (state.wheelQuizSubject && state.wheelQuizSubject !== 'all') {
-      if (state.wheelQuizSubject === 'Tin học và Công nghệ') {
-        matchSub =
-          q.subject === 'Tin học và Công nghệ' ||
-          q.subject === 'Tin học' ||
-          q.subject === 'Công nghệ';
-      } else {
-        matchSub = q.subject === state.wheelQuizSubject;
-      }
-    }
+  // Filter pool by chosen folder
+  const currentFolderPool = state.wheelQuizFolderId && state.wheelQuizFolderId !== 'all'
+    ? (state.wheelQuizFolderId === 'uncategorized'
+        ? currentSubjectPool.filter((q) => !q.folderId)
+        : currentSubjectPool.filter((q) => q.folderId === state.wheelQuizFolderId))
+    : currentSubjectPool;
 
-    let matchCat = true;
-    if (state.wheelQuizCategory && state.wheelQuizCategory !== 'all') {
-      matchCat =
-        q.category === state.wheelQuizCategory ||
-        (!q.category && state.wheelQuizCategory === 'Tuần 1');
-    }
-
-    return matchSub && matchCat;
-  });
-
-  const currentQuestionPool =
-    currentSubjectAndCategoryPool.length > 0
-      ? currentSubjectAndCategoryPool
-      : quizQuestionsList;
+  const currentQuestionPool = currentFolderPool.length > 0
+    ? currentFolderPool
+    : (currentSubjectPool.length > 0 ? currentSubjectPool : quizQuestionsList);
 
   const usedQuestionIds = state.usedQuizQuestionIds || [];
   const unusedQuestions = currentQuestionPool.filter((q) => !usedQuestionIds.includes(q.id));
@@ -251,6 +225,13 @@ export const WheelTab: React.FC<WheelTabProps> = ({ state, onUpdateState }) => {
       ...prev,
       quizQuestions: updatedQuestions,
       usedQuizQuestionIds: (prev.usedQuizQuestionIds || []).filter((id) => validIds.has(id))
+    }));
+  };
+
+  const handleSaveFolders = (updatedFolders: QuestionFolder[]) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      questionFolders: updatedFolders
     }));
   };
 
@@ -504,42 +485,6 @@ export const WheelTab: React.FC<WheelTabProps> = ({ state, onUpdateState }) => {
                     </div>
                   </div>
 
-                  {/* Storage Category / Folder Selection */}
-                  <div>
-                    <span className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
-                      <span>Nơi lưu trữ / Thư mục câu hỏi:</span>
-                      <button
-                        type="button"
-                        onClick={() => setQuestionBankOpen(true)}
-                        className="text-[10px] text-teal-700 font-extrabold hover:underline"
-                      >
-                        + Tạo thư mục mới
-                      </button>
-                    </span>
-                    <select
-                      value={state.wheelQuizCategory || 'all'}
-                      onChange={(e) =>
-                        onUpdateState((prev) => ({
-                          ...prev,
-                          wheelQuizCategory: e.target.value
-                        }))
-                      }
-                      className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                    >
-                      <option value="all">📁 Tất cả thư mục ({quizQuestionsList.length} câu)</option>
-                      {quizCategoriesList.map((cat) => {
-                        const count = quizQuestionsList.filter(
-                          (q) => q.category === cat || (!q.category && cat === 'Tuần 1')
-                        ).length;
-                        return (
-                          <option key={cat} value={cat}>
-                            📁 {cat} ({count} câu)
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-
                   {/* Subject filter */}
                   <div>
                     <span className="block text-[11px] font-bold text-slate-700 mb-1">
@@ -556,7 +501,6 @@ export const WheelTab: React.FC<WheelTabProps> = ({ state, onUpdateState }) => {
                       className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
                     >
                       <option value="all">Tất cả môn học (Ngẫu nhiên)</option>
-                      <option value="Tin học và Công nghệ">Tin học và Công nghệ</option>
                       <option value="Tin học">Tin học</option>
                       <option value="Công nghệ">Công nghệ</option>
                       <option value="Toán">Toán</option>
@@ -567,6 +511,34 @@ export const WheelTab: React.FC<WheelTabProps> = ({ state, onUpdateState }) => {
                       <option value="Tiếng Anh">Tiếng Anh</option>
                       <option value="Đố vui">Đố vui</option>
                       <option value="Đạo đức">Đạo đức</option>
+                    </select>
+                  </div>
+
+                  {/* Question Folder filter */}
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <Folder className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Thư mục câu hỏi:</span>
+                    </span>
+                    <select
+                      value={state.wheelQuizFolderId || 'all'}
+                      onChange={(e) =>
+                        onUpdateState((prev) => ({
+                          ...prev,
+                          wheelQuizFolderId: e.target.value
+                        }))
+                      }
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="all">Tất cả thư mục ({quizQuestionsList.length} câu)</option>
+                      <option value="uncategorized">
+                        Chưa xếp thư mục ({quizQuestionsList.filter((q) => !q.folderId).length} câu)
+                      </option>
+                      {(state.questionFolders || DEFAULT_QUESTION_FOLDERS).map((f) => (
+                        <option key={f.id} value={f.id}>
+                          📁 {f.name} ({quizQuestionsList.filter((q) => q.folderId === f.id).length} câu)
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -798,21 +770,9 @@ export const WheelTab: React.FC<WheelTabProps> = ({ state, onUpdateState }) => {
           isOpen={questionBankOpen}
           onClose={() => setQuestionBankOpen(false)}
           questions={quizQuestionsList}
-          categories={quizCategoriesList}
+          folders={state.questionFolders || DEFAULT_QUESTION_FOLDERS}
           onSaveQuestions={handleSaveQuestions}
-          onSaveCategories={(cats) =>
-            onUpdateState((prev) => ({
-              ...prev,
-              quizCategories: cats
-            }))
-          }
-          activeCategory={state.wheelQuizCategory || 'all'}
-          onSelectCategory={(cat) =>
-            onUpdateState((prev) => ({
-              ...prev,
-              wheelQuizCategory: cat
-            }))
-          }
+          onSaveFolders={handleSaveFolders}
         />
       )}
     </div>

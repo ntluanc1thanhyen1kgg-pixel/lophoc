@@ -1,5 +1,26 @@
-import { AppState, DEFAULT_SUBJECTS, Student, UserAccount } from '../types';
+import { AppState, DEFAULT_SUBJECTS, Student, UserAccount, QuestionFolder } from '../types';
 import { DEFAULT_QUIZ_QUESTIONS } from '../data/defaultQuestions';
+
+export const DEFAULT_QUESTION_FOLDERS: QuestionFolder[] = [
+  {
+    id: 'folder-gk1',
+    name: 'Ôn tập Giữa kỳ 1',
+    description: 'Bộ câu hỏi ôn tập kiểm tra giữa học kỳ 1',
+    color: '#0284c7'
+  },
+  {
+    id: 'folder-ck1',
+    name: 'Ôn tập Cuối kỳ 1',
+    description: 'Bộ câu hỏi tổng hợp kiến thức học kỳ 1',
+    color: '#10b981'
+  },
+  {
+    id: 'folder-dv',
+    name: 'Đố vui khởi động',
+    description: 'Các câu hỏi khởi động vui nhộn đầu tiết học',
+    color: '#f59e0b'
+  }
+];
 
 export const STORAGE_KEY = 'lopHocVuiVeTeal_lop91_v2';
 
@@ -193,11 +214,11 @@ export function getDefaultStateForUser(user?: UserAccount | null): AppState {
     wheelEffect: 'Xoáy tròn',
     wheelGroup: 'all',
     quizQuestions: [...DEFAULT_QUIZ_QUESTIONS],
-    quizCategories: ['Tuần 1', 'Tuần 2', 'Tuần 3', 'Tuần 4', 'Ngày 18/09/2026', 'Ôn tập Tổng hợp'],
+    questionFolders: [...DEFAULT_QUESTION_FOLDERS],
     wheelQuizEnabled: true,
     wheelQuizTimer: 15,
     wheelQuizSubject: user.subject || 'all',
-    wheelQuizCategory: 'all',
+    wheelQuizFolderId: 'all',
     wheelQuizShuffleOptions: true,
     usedQuizQuestionIds: []
   };
@@ -210,31 +231,41 @@ export function loadStoredState(user?: UserAccount | null): AppState {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.version) {
+        if (Array.isArray(parsed.subjects)) {
+          parsed.subjects = parsed.subjects.filter((s: string) => s !== 'Tin học và Công nghệ');
+          if (!parsed.subjects.includes('Tin học')) parsed.subjects.push('Tin học');
+          if (!parsed.subjects.includes('Công nghệ')) parsed.subjects.push('Công nghệ');
+        }
+
         if (!parsed.quizQuestions || !Array.isArray(parsed.quizQuestions) || parsed.quizQuestions.length === 0) {
           parsed.quizQuestions = [...DEFAULT_QUIZ_QUESTIONS];
         } else {
-          const hasTinHoc = parsed.quizQuestions.some((q: { subject?: string }) =>
-            q.subject === 'Tin học và Công nghệ' || q.subject === 'Tin học' || q.subject === 'Công nghệ'
+          parsed.quizQuestions = parsed.quizQuestions.filter(
+            (q: { subject?: string }) => q.subject !== 'Tin học và Công nghệ'
           );
+          const hasTinHoc = parsed.quizQuestions.some((q: { subject?: string }) => q.subject === 'Tin học');
           if (!hasTinHoc) {
-            const thQuestions = DEFAULT_QUIZ_QUESTIONS.filter((q) =>
-              q.subject === 'Tin học và Công nghệ' || q.subject === 'Tin học' || q.subject === 'Công nghệ'
-            );
+            const thQuestions = DEFAULT_QUIZ_QUESTIONS.filter((q) => q.subject === 'Tin học');
             parsed.quizQuestions = [...parsed.quizQuestions, ...thQuestions];
           }
+          const hasCongNghe = parsed.quizQuestions.some((q: { subject?: string }) => q.subject === 'Công nghệ');
+          if (!hasCongNghe) {
+            const cnQuestions = DEFAULT_QUIZ_QUESTIONS.filter((q) => q.subject === 'Công nghệ');
+            parsed.quizQuestions = [...parsed.quizQuestions, ...cnQuestions];
+          }
         }
-        if (Array.isArray(parsed.subjects) && !parsed.subjects.includes('Tin học và Công nghệ')) {
-          parsed.subjects.push('Tin học và Công nghệ');
-        }
-        if (!parsed.quizCategories || !Array.isArray(parsed.quizCategories) || parsed.quizCategories.length === 0) {
-          parsed.quizCategories = ['Tuần 1', 'Tuần 2', 'Tuần 3', 'Tuần 4', 'Ngày 18/09/2026', 'Ôn tập Tổng hợp'];
+        if (parsed.wheelQuizSubject === 'Tin học và Công nghệ') {
+          parsed.wheelQuizSubject = 'all';
         }
         if (parsed.wheelQuizEnabled === undefined) parsed.wheelQuizEnabled = true;
         if (parsed.wheelQuizTimer === undefined) parsed.wheelQuizTimer = 15;
         if (parsed.wheelQuizSubject === undefined) parsed.wheelQuizSubject = 'all';
-        if (parsed.wheelQuizCategory === undefined) parsed.wheelQuizCategory = 'all';
+        if (parsed.wheelQuizFolderId === undefined) parsed.wheelQuizFolderId = 'all';
         if (parsed.wheelQuizShuffleOptions === undefined) parsed.wheelQuizShuffleOptions = true;
         if (!Array.isArray(parsed.usedQuizQuestionIds)) parsed.usedQuizQuestionIds = [];
+        if (!Array.isArray(parsed.questionFolders) || parsed.questionFolders.length === 0) {
+          parsed.questionFolders = [...DEFAULT_QUESTION_FOLDERS];
+        }
         return parsed;
       }
     }

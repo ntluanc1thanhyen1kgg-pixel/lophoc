@@ -1,11 +1,10 @@
 import { QuizQuestion } from '../types';
 
 export const DEFAULT_QUIZ_QUESTIONS: QuizQuestion[] = [
-  // Tin học và Công nghệ
+  // Tin học
   {
     id: 'quiz-th-01',
-    subject: 'Tin học và Công nghệ',
-    category: 'Tuần 1',
+    subject: 'Tin học',
     question: 'Bộ phận nào của máy tính giúp em nhập chữ cái và số vào văn bản?',
     options: ['Bàn phím', 'Màn hình', 'Loa', 'Máy in'],
     correctIndex: 0,
@@ -14,8 +13,7 @@ export const DEFAULT_QUIZ_QUESTIONS: QuizQuestion[] = [
   },
   {
     id: 'quiz-th-02',
-    subject: 'Tin học và Công nghệ',
-    category: 'Tuần 1',
+    subject: 'Tin học',
     question: 'Khi ngồi học máy tính, tư thế nào sau đây là đúng và bảo vệ mắt?',
     options: [
       'Ngồi thẳng lưng, mắt cách màn hình 50 - 70 cm',
@@ -29,8 +27,7 @@ export const DEFAULT_QUIZ_QUESTIONS: QuizQuestion[] = [
   },
   {
     id: 'quiz-th-03',
-    subject: 'Tin học và Công nghệ',
-    category: 'Tuần 2',
+    subject: 'Tin học',
     question: 'Trong phần mềm soạn thảo văn bản Word, phím "Enter" có tác dụng gì?',
     options: [
       'Xuống dòng mới để bắt đầu đoạn văn mới',
@@ -44,22 +41,7 @@ export const DEFAULT_QUIZ_QUESTIONS: QuizQuestion[] = [
   },
   {
     id: 'quiz-th-04',
-    subject: 'Tin học và Công nghệ',
-    category: 'Tuần 2',
-    question: 'Đâu là việc làm an toàn khi sử dụng thiết bị điện trong gia đình?',
-    options: [
-      'Lau khô tay trước khi chạm vào phích cắm điện',
-      'Cắm đồng thời nhiều thiết bị công suất lớn vào một ổ',
-      'Chọc vật kim loại nhọn vào ổ cắm điện',
-      'Tự ý nối dây điện bị đứt khi chưa ngắt cầu dao'
-    ],
-    correctIndex: 0,
-    rewardCoins: 2,
-    explanation: 'Tuyệt đối không chạm vào ổ cắm hay phích điện khi tay còn ướt để tránh bị điện giật.'
-  },
-  {
-    id: 'quiz-th-05',
-    subject: 'Tin học và Công nghệ',
+    subject: 'Tin học',
     question: 'Thao tác "nháy đúp chuột" (Double Click) được thực hiện như thế nào?',
     options: [
       'Nhấn nút chuột trái hai lần liên tiếp thật nhanh',
@@ -72,8 +54,38 @@ export const DEFAULT_QUIZ_QUESTIONS: QuizQuestion[] = [
     explanation: 'Nháy đúp chuột là thao tác bấm nút trái chuột 2 lần liên tiếp nhanh chóng.'
   },
   {
-    id: 'quiz-th-06',
-    subject: 'Tin học và Công nghệ',
+    id: 'quiz-th-05',
+    subject: 'Tin học',
+    question: 'Trong máy tính, "Thư mục" (Folder) có công dụng chính là gì?',
+    options: [
+      'Để lưu trữ và sắp xếp các tệp dữ liệu ngăn nắp',
+      'Dùng để kết nối mạng Internet',
+      'Để tăng âm lượng của loa',
+      'Dùng để làm mát máy tính'
+    ],
+    correctIndex: 0,
+    rewardCoins: 2,
+    explanation: 'Thư mục giống như một ngăn kéo cặp sách, giúp phân loại và lưu giữ các tệp tài liệu gọn gàng.'
+  },
+
+  // Công nghệ
+  {
+    id: 'quiz-cn-01',
+    subject: 'Công nghệ',
+    question: 'Đâu là việc làm an toàn khi sử dụng thiết bị điện trong gia đình?',
+    options: [
+      'Lau khô tay trước khi chạm vào phích cắm điện',
+      'Cắm đồng thời nhiều thiết bị công suất lớn vào một ổ',
+      'Chọc vật kim loại nhọn vào ổ cắm điện',
+      'Tự ý nối dây điện bị đứt khi chưa ngắt cầu dao'
+    ],
+    correctIndex: 0,
+    rewardCoins: 2,
+    explanation: 'Tuyệt đối không chạm vào ổ cắm hay phích điện khi tay còn ướt để tránh bị điện giật.'
+  },
+  {
+    id: 'quiz-cn-02',
+    subject: 'Công nghệ',
     question: 'Đâu là biển báo mang ý nghĩa "Cảnh báo nguy hiểm - Điện giật"?',
     options: [
       'Hình tam giác viền vàng có hình tia sét màu đen',
@@ -86,22 +98,8 @@ export const DEFAULT_QUIZ_QUESTIONS: QuizQuestion[] = [
     explanation: 'Biển báo nguy hiểm điện giật có hình tam giác nền vàng viền đen với hình tia sét.'
   },
   {
-    id: 'quiz-th-07',
-    subject: 'Tin học và Công nghệ',
-    question: 'Trong máy tính, "Thư mục" (Folder) có công dụng chính là gì?',
-    options: [
-      'Để lưu trữ và sắp xếp các tệp dữ liệu ngăn nắp',
-      'Dùng để kết nối mạng Internet',
-      'Để tăng âm lượng của loa',
-      'Dùng để làm mát máy tính'
-    ],
-    correctIndex: 0,
-    rewardCoins: 2,
-    explanation: 'Thư mục giống như một ngăn kéo cặp sách, giúp phân loại và lưu giữ các tệp tài liệu gọn gàng.'
-  },
-  {
-    id: 'quiz-th-08',
-    subject: 'Tin học và Công nghệ',
+    id: 'quiz-cn-03',
+    subject: 'Công nghệ',
     question: 'Khi tưới nước cho hoa và cây cảnh trong sân trường, thời điểm nào là thích hợp nhất?',
     options: [
       'Buổi sáng sớm hoặc chiều mát',

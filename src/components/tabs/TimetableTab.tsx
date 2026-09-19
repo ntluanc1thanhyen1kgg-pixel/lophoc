@@ -281,7 +281,7 @@ export const TimetableTab: React.FC<TimetableTabProps> = ({ state, onUpdateState
                 <input
                   type="text"
                   required
-                  placeholder="Ví dụ: Toán, Tin học, Sinh hoạt lớp..."
+                  placeholder="Ví dụ: Toán, Tiếng Việt, Sinh hoạt lớp..."
                   value={formSubject}
                   onChange={(e) => setFormSubject(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-2xl border-2 border-slate-200 focus:border-teal-500 focus:outline-none text-sm font-semibold"

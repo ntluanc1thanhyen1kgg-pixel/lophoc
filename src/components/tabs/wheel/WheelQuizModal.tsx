@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Sparkles, Clock, CheckCircle2, XCircle, Award, RotateCcw, HelpCircle, ArrowRight, Volume2, Plus, Shuffle } from 'lucide-react';
+import { Sparkles, Clock, CheckCircle2, XCircle, Award, RotateCcw, HelpCircle, ArrowRight, Volume2, Plus, Shuffle, Eye } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { QuizQuestion, Student } from '../../../types';
 import { Avatar } from '../../Avatar';
@@ -49,6 +49,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [isAnswered, setIsAnswered] = useState<boolean>(false);
   const [isTimeUp, setIsTimeUp] = useState<boolean>(false);
+  const [showAnswer, setShowAnswer] = useState<boolean>(false);
   const [awardedCoins, setAwardedCoins] = useState<number | null>(null);
   const [shuffleSeed, setShuffleSeed] = useState<number>(0);
   const [isShuffleEnabled, setIsShuffleEnabled] = useState<boolean>(shuffleOptions);
@@ -101,6 +102,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
     setSelectedIdx(null);
     setIsAnswered(false);
     setIsTimeUp(false);
+    setShowAnswer(false);
     setAwardedCoins(null);
     // Increment shuffle seed for brand-new order on each question display
     setShuffleSeed((prev) => prev + 1);
@@ -132,10 +134,11 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
   }, [isOpen, timerActive, isAnswered, isTimeUp]);
 
   const handleSelectOption = (index: number) => {
-    if (isAnswered || isTimeUp) return;
+    if (isAnswered || isTimeUp || showAnswer) return;
 
     setSelectedIdx(index);
     setIsAnswered(true);
+    setShowAnswer(true);
     setTimerActive(false);
 
     const isCorrect = index === correctDisplayIndex;
@@ -155,9 +158,16 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
     }
   };
 
+  const handleRevealAnswer = () => {
+    setShowAnswer(true);
+    setTimerActive(false);
+    playBeep(650, 0.2, 0.15);
+  };
+
   const handleAddTime = () => {
     setTimeLeft((prev) => prev + 10);
     setIsTimeUp(false);
+    setShowAnswer(false);
     setTimerActive(true);
     playBeep(700, 0.15, 0.1);
   };
@@ -173,7 +183,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
   };
 
   const toggleShuffle = () => {
-    if (isAnswered || isTimeUp) return;
+    if (isAnswered || isTimeUp || showAnswer) return;
     setIsShuffleEnabled((prev) => !prev);
     setShuffleSeed((prev) => prev + 1);
   };
@@ -181,7 +191,6 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
   if (!isOpen) return null;
 
   const isCorrectAnswer = selectedIdx !== null && selectedIdx === correctDisplayIndex;
-  const isWrongAnswer = selectedIdx !== null && selectedIdx !== correctDisplayIndex;
 
   // Progress percentage for timer bar
   const timerPercent = Math.max(0, Math.min(100, (timeLeft / durationSeconds) * 100));
@@ -201,11 +210,6 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
                   Học sinh được chọn
                 </span>
-                {question.category && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-950 border border-amber-300">
-                    📁 {question.category}
-                  </span>
-                )}
                 {question.subject && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
                     Môn: {question.subject}
@@ -231,19 +235,19 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
             </div>
           </div>
 
-          {/* Countdown Display Badge */}
-          <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-center">
-            {/* Auto shuffle toggle / re-shuffle button */}
+          {/* Countdown Display Badge & Controls */}
+          <div className="flex items-center gap-2 sm:gap-2.5 self-end sm:self-center flex-wrap">
+            {/* Auto shuffle toggle */}
             <button
               type="button"
-              disabled={isAnswered || isTimeUp}
+              disabled={isAnswered || isTimeUp || showAnswer}
               onClick={toggleShuffle}
               title={isShuffleEnabled ? 'Đang tự động đảo đáp án (Bấm để bật/tắt hoặc xáo lại)' : 'Bấm để bật tự động đảo vị trí đáp án'}
               className={`px-2.5 py-1.5 rounded-2xl text-xs font-black transition-all flex items-center gap-1.5 border ${
                 isShuffleEnabled
                   ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 hover:border-purple-300'
                   : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
-              } ${isAnswered || isTimeUp ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              } ${isAnswered || isTimeUp || showAnswer ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             >
               <Shuffle className={`w-3.5 h-3.5 ${isShuffleEnabled ? 'text-purple-600' : 'text-slate-400'}`} />
               <span className="hidden sm:inline">
@@ -251,8 +255,22 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
               </span>
             </button>
 
+            {/* Reveal Answer button for teacher (available anytime) */}
+            {!showAnswer && (
+              <button
+                type="button"
+                onClick={handleRevealAnswer}
+                title="Bấm để hiển thị đáp án đúng"
+                className="px-2.5 py-1.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Xem đáp án</span>
+              </button>
+            )}
+
+            {/* Countdown timer badge */}
             <div
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-2xl font-black text-sm transition-all shadow-xs border ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl font-black text-sm transition-all shadow-xs border ${
                 isTimeUp
                   ? 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
                   : timeLeft <= 5
@@ -317,7 +335,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
             const style = OPTION_STYLES[idx] || OPTION_STYLES[0];
 
             let cardStyle = 'bg-white border-2 border-slate-200 text-slate-800';
-            if (isAnswered || isTimeUp) {
+            if (showAnswer) {
               if (isThisCorrect) {
                 cardStyle = 'bg-emerald-50 border-2 border-emerald-500 text-emerald-950 font-bold shadow-md shadow-emerald-500/10 scale-[1.01]';
               } else if (isThisSelected) {
@@ -326,20 +344,24 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
                 cardStyle = 'bg-slate-50 border-slate-200 text-slate-400 opacity-60';
               }
             } else {
-              cardStyle += ` ${style.borderHover} hover:shadow-md cursor-pointer transition-all active:scale-98`;
+              if (isTimeUp) {
+                cardStyle = 'bg-slate-50 border-2 border-slate-200 text-slate-700 opacity-90';
+              } else {
+                cardStyle += ` ${style.borderHover} hover:shadow-md cursor-pointer transition-all active:scale-98`;
+              }
             }
 
             return (
               <button
                 key={idx}
-                disabled={isAnswered || isTimeUp}
+                disabled={isAnswered || isTimeUp || showAnswer}
                 onClick={() => handleSelectOption(idx)}
                 className={`p-3.5 rounded-2xl text-left flex items-center justify-between gap-3 transition-all ${cardStyle}`}
               >
                 <div className="flex items-center gap-3">
                   <span
                     className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-xs ${
-                      isAnswered || isTimeUp
+                      showAnswer
                         ? isThisCorrect
                           ? 'bg-emerald-600 text-white'
                           : isThisSelected
@@ -354,7 +376,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
                 </div>
 
                 {/* Status indicator on right */}
-                {(isAnswered || isTimeUp) && (
+                {showAnswer && (
                   <div>
                     {isThisCorrect ? (
                       <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -368,8 +390,44 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
           })}
         </div>
 
-        {/* Feedback Banner after answering or time up */}
-        {(isAnswered || isTimeUp) && (
+        {/* Time up banner before reveal */}
+        {isTimeUp && !showAnswer && (
+          <div className="p-4 rounded-2xl mb-4 bg-amber-50 border-2 border-amber-300 text-amber-950 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm animate-in fade-in zoom-in-98">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-200 text-amber-900 flex items-center justify-center shrink-0">
+                <Clock className="w-5 h-5 text-amber-700" />
+              </div>
+              <div>
+                <span className="font-black text-sm block">⏰ Đã hết thời gian suy nghĩ!</span>
+                <span className="text-xs text-amber-800">
+                  Học sinh hãy đưa ra câu trả lời trực tiếp. Bấm nút để kiểm tra đáp án đúng.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={handleAddTime}
+                className="px-3 py-2 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+10s suy nghĩ</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleRevealAnswer}
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs transition-all shadow-md shadow-teal-700/20 flex items-center justify-center gap-1.5 cursor-pointer animate-bounce"
+              >
+                <Eye className="w-4 h-4" />
+                <span>Hiển thị đáp án</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Feedback Banner after reveal or selection */}
+        {showAnswer && (
           <div
             className={`p-4 rounded-2xl mb-4 border transition-all animate-in fade-in zoom-in-98 ${
               isCorrectAnswer
@@ -388,22 +446,14 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
                       🎉 CHÍNH XÁC! Chúc mừng {student.name} đã nhận +{awardedCoins || question.rewardCoins || 2} bông hoa 🌺!
                     </span>
                   </>
-                ) : isTimeUp ? (
-                  <>
-                    <Clock className="w-5 h-5 text-amber-600 shrink-0" />
-                    <div>
-                      <span className="font-black text-sm block">⏰ Đã hết thời gian suy nghĩ!</span>
-                      <span className="text-xs text-amber-800">
-                        Đáp án đúng là: <b>{OPTION_LETTERS[correctDisplayIndex]}. {displayOptions[correctDisplayIndex]}</b>
-                      </span>
-                    </div>
-                  </>
                 ) : (
                   <>
-                    <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                    <HelpCircle className="w-5 h-5 text-amber-600 shrink-0" />
                     <div>
-                      <span className="font-black text-sm block">Chưa chính xác!</span>
-                      <span className="text-xs text-rose-800">
+                      <span className="font-black text-sm block">
+                        {isTimeUp ? '⏰ Kết quả đáp án đúng:' : 'Chưa chính xác!'}
+                      </span>
+                      <span className="text-xs text-slate-800">
                         Đáp án đúng là: <b>{OPTION_LETTERS[correctDisplayIndex]}. {displayOptions[correctDisplayIndex]}</b>
                       </span>
                     </div>
@@ -416,7 +466,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
                 {isTimeUp && (
                   <button
                     onClick={handleAddTime}
-                    className="px-2.5 py-1 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 text-xs font-black transition-all flex items-center gap-1"
+                    className="px-2.5 py-1 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 text-xs font-black transition-all flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>+10s làm lại</span>
@@ -425,7 +475,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
                 {!isCorrectAnswer && (
                   <button
                     onClick={() => handleManualAward(1)}
-                    className="px-2.5 py-1 rounded-xl bg-teal-100 hover:bg-teal-200 text-teal-900 text-xs font-black transition-all flex items-center gap-1"
+                    className="px-2.5 py-1 rounded-xl bg-teal-100 hover:bg-teal-200 text-teal-900 text-xs font-black transition-all flex items-center gap-1 cursor-pointer"
                   >
                     <Award className="w-3.5 h-3.5 text-teal-700" />
                     <span>+1 hoa khích lệ 🌺</span>
@@ -452,7 +502,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
               <button
                 key={amt}
                 onClick={() => handleManualAward(amt)}
-                className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-900 font-extrabold text-xs transition-all border border-slate-200 flex items-center gap-0.5"
+                className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-900 font-extrabold text-xs transition-all border border-slate-200 flex items-center gap-0.5 cursor-pointer"
               >
                 <span>+{amt}</span>
                 <span>🌺</span>
@@ -463,7 +513,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <button
               onClick={onClose}
-              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-extrabold text-xs transition-all"
+              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-extrabold text-xs transition-all cursor-pointer"
             >
               Đóng
             </button>
@@ -474,7 +524,7 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
                   onClose();
                   onSpinAgain();
                 }}
-                className="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-md shadow-teal-700/20 transition-all flex items-center justify-center gap-1.5"
+                className="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-md shadow-teal-700/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Quay tiếp</span>
@@ -486,3 +536,4 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
     </div>
   );
 };
+
