@@ -11,7 +11,12 @@ import {
   CalendarCheck,
   HardDrive,
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  Github,
+  Globe,
+  Download,
+  Sparkles,
+  ArrowUpRight
 } from 'lucide-react';
 import { AppState, UserAccount } from '../../types';
 import {
@@ -25,13 +30,15 @@ interface DataTabProps {
   onUpdateState: (updater: (prev: AppState) => AppState) => void;
   onResetState: () => void;
   currentUser?: UserAccount | null;
+  onOpenGithubModal?: () => void;
 }
 
 export const DataTab: React.FC<DataTabProps> = ({
   state,
   onUpdateState,
   onResetState,
-  currentUser
+  currentUser,
+  onOpenGithubModal
 }) => {
   const [cloudLoading, setCloudLoading] = useState(false);
   const [cloudMsg, setCloudMsg] = useState<string | null>(null);
@@ -166,6 +173,43 @@ export const DataTab: React.FC<DataTabProps> = ({
           >
             <RefreshCw className={`w-4 h-4 ${cloudLoading ? 'animate-spin' : ''}`} />
             <span>Tải lại từ Cloud</span>
+          </button>
+        </div>
+      </div>
+
+      {/* GitHub Version & Data Sync Card */}
+      <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-teal-950 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-5 border-2 border-teal-500/30">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <Github className="w-5 h-5 text-teal-400" />
+            <span className="text-xs font-bold uppercase tracking-wider text-teal-300">
+              Cập Nhật Phiên Bản & Đồng Bộ GitHub
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 text-[10px] font-black border border-teal-400/30 flex items-center gap-1">
+              <Globe className="w-3 h-3 text-emerald-400" /> Vercel App Data Sync
+            </span>
+          </div>
+          <h3 className="text-lg sm:text-xl font-black text-white">
+            Cập Nhật Ngân Hàng Câu Hỏi & Dữ Liệu Từ GitHub
+          </h3>
+          <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
+            Hỗ trợ người dùng trên trang Vercel (`vercel.app`) tự động kiểm tra và gộp bộ câu hỏi, thư mục bài học, môn học và phần thưởng mới nhất trực tiếp từ repository GitHub.
+          </p>
+          {state.lastGithubUpdateVersion && (
+            <div className="mt-2 text-[11px] font-mono text-emerald-300 font-bold flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Đã cập nhật gần nhất: {state.lastGithubUpdateVersion}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 self-stretch md:self-auto">
+          <button
+            onClick={onOpenGithubModal}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 py-3 px-5 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-black text-xs shadow-lg transition-all cursor-pointer"
+          >
+            <Github className="w-4 h-4 text-slate-950" />
+            <span>Cập Nhật Từ GitHub</span>
           </button>
         </div>
       </div>

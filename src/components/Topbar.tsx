@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, Menu, Database, LogOut, ShieldCheck, UserCheck } from 'lucide-react';
+import { CheckCircle2, Menu, Database, LogOut, ShieldCheck, UserCheck, Github } from 'lucide-react';
 import { ClassInfo, TeacherProfile, UserAccount } from '../types';
 import { Avatar } from './Avatar';
 
@@ -16,6 +16,7 @@ interface TopbarProps {
   currentUser?: UserAccount | null;
   onLogout?: () => void;
   dbConnected?: boolean;
+  onOpenGithubModal?: () => void;
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -30,7 +31,8 @@ export const Topbar: React.FC<TopbarProps> = ({
   onOpenMobileSidebar,
   currentUser,
   onLogout,
-  dbConnected = true
+  dbConnected = true,
+  onOpenGithubModal
 }) => {
   return (
     <header className="sticky top-3.5 z-30 bg-white/95 backdrop-blur-md border-2 border-teal-200/80 rounded-3xl shadow-lg shadow-teal-900/5 p-3 sm:px-5 sm:py-3.5 flex items-center justify-between gap-3">
@@ -83,6 +85,18 @@ export const Topbar: React.FC<TopbarProps> = ({
           <span className="hidden md:inline">Cloud {savedTime}</span>
           <span className="md:hidden">{savedTime}</span>
         </div>
+
+        {/* GitHub Data Sync Button */}
+        {onOpenGithubModal && (
+          <button
+            onClick={onOpenGithubModal}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-teal-300 border border-teal-400/30 text-[10px] font-extrabold shadow-sm cursor-pointer transition-all"
+            title="Kiểm tra và cập nhật ngân hàng câu hỏi & dữ liệu từ GitHub"
+          >
+            <Github className="w-3.5 h-3.5 text-teal-400" />
+            <span className="hidden lg:inline">Cập nhật GitHub</span>
+          </button>
+        )}
 
         {/* Class switcher or Admin mode */}
         {currentUser?.role === 'admin' ? (

@@ -147,11 +147,13 @@ export interface AppSettings {
   filmExclude: boolean;
   tickLast10: boolean;
   timerColor: string;
+  githubRepoUrl?: string;
 }
 
 export interface AppState {
   version: number;
   ownerUserId?: string; // ID của tài khoản giáo viên sở hữu không gian làm việc này
+  lastGithubUpdateVersion?: string;
   activeClassId: string;
   currentPage: string;
   teacher: TeacherProfile;
