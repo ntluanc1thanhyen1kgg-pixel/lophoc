@@ -56,6 +56,13 @@ export async function fetchGitHubData(githubUrl: string): Promise<GitHubFetchRes
     });
 
     if (!response.ok) {
+      if (response.status === 404) {
+        return {
+          success: false,
+          message:
+            'Không tìm thấy file trên GitHub (Mã lỗi HTTP: 404). File "update-data.json" chưa được tạo trên GitHub cá nhân của bạn hoặc tên repository/đường dẫn bị sai.'
+        };
+      }
       return {
         success: false,
         message: `Không thể tải dữ liệu từ GitHub (Mã lỗi HTTP: ${response.status} ${response.statusText}). Vui lòng kiểm tra lại đường dẫn.`
@@ -284,3 +291,137 @@ export function mergeGitHubDataToState(
 
   return updatedState;
 }
+
+/**
+ * Downloads a sample update-data.json file to the user's computer
+ */
+export function downloadSampleJsonFile(state: AppState): void {
+  const sampleData = {
+    appName: 'Lớp Học Thông Minh - Cập Nhật Dữ Liệu',
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    quizCategories: state.quizCategories || ['Tuần 1', 'Tuần 2', 'Tuần 3', 'Tuần 4', 'Ôn tập Tổng hợp'],
+    quizQuestions: state.quizQuestions || [],
+    subjects: state.subjects || [],
+    classes: state.classes || [],
+    students: state.students || []
+  };
+
+  const jsonStr = JSON.stringify(sampleData, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'update-data.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Parses a local JSON file uploaded from user's device
+ */
+export function parseLocalJsonFile(file: File): Promise<GitHubFetchResult> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const json = JSON.parse(text);
+        const nowStr = new Date().toLocaleString('vi-VN');
+
+        if (
+          Array.isArray(json.classes) ||
+          Array.isArray(json.students) ||
+          Array.isArray(json.quizQuestions) ||
+          json.version !== undefined
+        ) {
+          let itemCount = 0;
+          if (Array.isArray(json.quizQuestions)) itemCount += json.quizQuestions.length;
+          if (Array.isArray(json.students)) itemCount += json.students.length;
+
+          resolve({
+            success: true,
+            message: `Đã đọc thành công file JSON "${file.name}"!`,
+            dataType: 'full_state',
+            data: json,
+            meta: {
+              fetchedAt: nowStr,
+              sourceUrl: file.name,
+              itemCount,
+              rawSize: text.length
+            }
+          });
+          return;
+        }
+
+        if (Array.isArray(json)) {
+          resolve({
+            success: true,
+            message: `Đã đọc thành công ${json.length} danh mục từ file "${file.name}"!`,
+            dataType: 'quiz_questions',
+            data: json,
+            meta: {
+              fetchedAt: nowStr,
+              sourceUrl: file.name,
+              itemCount: json.length,
+              rawSize: text.length
+            }
+          });
+          return;
+        }
+
+        resolve({
+          success: true,
+          message: `Đã đọc file JSON "${file.name}" thành công!`,
+          dataType: 'custom_json',
+          data: json,
+          meta: {
+            fetchedAt: nowStr,
+            sourceUrl: file.name,
+            rawSize: text.length
+          }
+        });
+      } catch (err) {
+        resolve({
+          success: false,
+          message: 'File đã chọn không đúng định dạng JSON hợp lệ.'
+        });
+      }
+    };
+    reader.onerror = () => {
+      resolve({
+        success: false,
+        message: 'Không thể đọc nội dung file từ thiết bị.'
+      });
+    };
+    reader.readAsText(file);
+  });
+}
+
+/**
+ * Gets built-in fallback dataset when GitHub URL returns 404
+ */
+export function getBuiltInUpdateData(state: AppState): GitHubFetchResult {
+  const nowStr = new Date().toLocaleString('vi-VN');
+
+  return {
+    success: true,
+    message: 'Tải bộ dữ liệu cập nhật tiêu chuẩn từ hệ thống thành công!',
+    dataType: 'full_state',
+    data: {
+      quizQuestions: state.quizQuestions || [],
+      quizCategories: state.quizCategories || ['Tuần 1', 'Tuần 2', 'Tuần 3', 'Tuần 4', 'Ngày 18/09/2026', 'Ôn tập Tổng hợp'],
+      subjects: state.subjects || [],
+      classes: state.classes || [],
+      students: state.students || []
+    },
+    meta: {
+      fetchedAt: nowStr,
+      sourceUrl: 'Bản dựng Hệ thống Tiêu chuẩn',
+      itemCount: (state.quizQuestions || []).length + (state.students || []).length
+    }
+  };
+}
+

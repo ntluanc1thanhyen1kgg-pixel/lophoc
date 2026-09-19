@@ -11,14 +11,21 @@ import {
   Users,
   Sparkles,
   ExternalLink,
-  Code
+  Code,
+  Upload,
+  FileText,
+  Copy,
+  Check
 } from 'lucide-react';
 import { AppState } from '../types';
 import {
   fetchGitHubData,
   mergeGitHubDataToState,
   DEFAULT_GITHUB_DATA_URL,
-  GitHubFetchResult
+  GitHubFetchResult,
+  downloadSampleJsonFile,
+  parseLocalJsonFile,
+  getBuiltInUpdateData
 } from '../services/githubService';
 
 interface GitHubUpdateModalProps {
@@ -39,6 +46,7 @@ export const GitHubUpdateModal: React.FC<GitHubUpdateModalProps> = ({
   const [fetchResult, setFetchResult] = useState<GitHubFetchResult | null>(null);
   const [mergeMode, setMergeMode] = useState<'smart' | 'overwrite'>('smart');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
 
@@ -55,6 +63,44 @@ export const GitHubUpdateModal: React.FC<GitHubUpdateModalProps> = ({
     setLoading(false);
   };
 
+  const handleLocalFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    setFetchResult(null);
+    setSuccessMessage(null);
+
+    const res = await parseLocalJsonFile(file);
+    setFetchResult(res);
+    setLoading(false);
+  };
+
+  const handleBuiltInUpdate = () => {
+    setLoading(true);
+    setFetchResult(null);
+    setSuccessMessage(null);
+
+    const res = getBuiltInUpdateData(state);
+    setFetchResult(res);
+    setLoading(false);
+  };
+
+  const handleCopySampleJson = () => {
+    const sampleData = {
+      appName: 'Lớp Học Thông Minh - Cập Nhật Dữ Liệu',
+      version: 1,
+      quizCategories: state.quizCategories || ['Tuần 1', 'Tuần 2', 'Tuần 3'],
+      quizQuestions: state.quizQuestions || [],
+      subjects: state.subjects || [],
+      classes: state.classes || [],
+      students: state.students || []
+    };
+    navigator.clipboard.writeText(JSON.stringify(sampleData, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleApplyUpdate = () => {
     if (!fetchResult || !fetchResult.success) return;
 
@@ -62,8 +108,8 @@ export const GitHubUpdateModal: React.FC<GitHubUpdateModalProps> = ({
 
     setSuccessMessage(
       mergeMode === 'overwrite'
-        ? 'Đã cập nhật và ghi đè toàn bộ dữ liệu ứng dụng từ GitHub thành công!'
-        : 'Đã hợp nhất thêm dữ liệu mới từ GitHub vào hệ thống thành công!'
+        ? 'Đã cập nhật và ghi đè toàn bộ dữ liệu ứng dụng thành công!'
+        : 'Đã hợp nhất thêm dữ liệu mới vào hệ thống thành công!'
     );
 
     setTimeout(() => {
@@ -143,28 +189,122 @@ export const GitHubUpdateModal: React.FC<GitHubUpdateModalProps> = ({
               </div>
             </div>
 
-            {/* Quick Presets */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-[11px] font-bold text-slate-500">Mẫu sẵn có:</span>
+            {/* Quick Presets & File Actions */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+              <span className="text-[11px] font-bold text-slate-500">Thao tác nhanh:</span>
               <button
                 type="button"
-                onClick={() => {
-                  setGithubUrl(DEFAULT_GITHUB_DATA_URL);
-                }}
+                onClick={() => setGithubUrl(DEFAULT_GITHUB_DATA_URL)}
                 className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-teal-50 hover:text-teal-800 border border-slate-200 text-[11px] font-bold text-slate-700 transition-all cursor-pointer"
               >
-                📦 Kho dữ liệu mặc định
+                📦 Link GitHub mặc định
               </button>
+
+              <button
+                type="button"
+                onClick={() => downloadSampleJsonFile(state)}
+                className="px-2.5 py-1 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+              >
+                <Download className="w-3 h-3 text-teal-600" />
+                <span>Tải file JSON mẫu</span>
+              </button>
+
+              <label className="px-2.5 py-1 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1">
+                <Upload className="w-3 h-3 text-indigo-600" />
+                <span>Chọn file từ máy</span>
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleLocalFileUpload}
+                  className="hidden"
+                />
+              </label>
             </div>
           </form>
 
-          {/* Error Message */}
+          {/* Error Message & Interactive Fixes */}
           {fetchResult && !fetchResult.success && (
-            <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-200 text-rose-800 text-xs font-bold flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-extrabold text-sm mb-1">Không thể lấy dữ liệu!</p>
-                <p>{fetchResult.message}</p>
+            <div className="p-4 sm:p-5 rounded-3xl bg-rose-50/90 border-2 border-rose-200 text-rose-900 space-y-3.5 animate-in fade-in duration-200">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-extrabold text-sm sm:text-base text-rose-950">
+                    Không thể lấy dữ liệu từ GitHub!
+                  </p>
+                  <p className="text-xs text-rose-800 font-medium leading-relaxed">
+                    {fetchResult.message}
+                  </p>
+                </div>
+              </div>
+
+              {/* Resolution options box */}
+              <div className="p-3.5 rounded-2xl bg-white border border-rose-200 space-y-2.5 text-xs text-slate-700">
+                <p className="font-black text-rose-900 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span>Giải pháp khắc phục tức thì:</span>
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Option A: Download sample JSON */}
+                  <button
+                    type="button"
+                    onClick={() => downloadSampleJsonFile(state)}
+                    className="p-2.5 rounded-xl bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-900 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer text-left"
+                  >
+                    <Download className="w-4 h-4 text-teal-600 shrink-0" />
+                    <div>
+                      <span className="block font-black">1. Tải file mẫu update-data.json</span>
+                      <span className="text-[10px] text-slate-500 font-normal">Tải file về rồi đăng lên repository GitHub</span>
+                    </div>
+                  </button>
+
+                  {/* Option B: Upload local json file */}
+                  <label className="p-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-900 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer text-left">
+                    <Upload className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <div>
+                      <span className="block font-black">2. Chọn file .json từ máy tính</span>
+                      <span className="text-[10px] text-slate-500 font-normal">Cập nhật ngay lập tức không cần qua GitHub</span>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleLocalFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {/* Option C: Built-in update */}
+                  <button
+                    type="button"
+                    onClick={handleBuiltInUpdate}
+                    className="p-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer text-left"
+                  >
+                    <RefreshCw className="w-4 h-4 text-amber-600 shrink-0" />
+                    <div>
+                      <span className="block font-black">3. Cập nhật Dữ Liệu Mẫu Hệ Thống</span>
+                      <span className="text-[10px] text-slate-500 font-normal">Nâng cấp trực tiếp từ ngân hàng dữ liệu chuẩn</span>
+                    </div>
+                  </button>
+
+                  {/* Option D: Copy sample JSON text */}
+                  <button
+                    type="button"
+                    onClick={handleCopySampleJson}
+                    className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer text-left"
+                  >
+                    {copied ? (
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-slate-600 shrink-0" />
+                    )}
+                    <div>
+                      <span className="block font-black">
+                        {copied ? 'Đã copy mã JSON!' : '4. Copy mã JSON mẫu'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-normal">Dán trực tiếp vào file editor trên GitHub</span>
+                    </div>
+                  </button>
+                </div>
               </div>
             </div>
           )}
