@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User account information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "teacher"] },
+        "password": { "type": "string" },
+        "subject": { "type": "string" },
+        "school": { "type": "string" },
+        "year": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "locked"] },
+        "note": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "avatar": { "type": "string" }
+      },
+      "required": ["id", "username", "email", "name", "role", "password"]
+    },
+    "Workspace": {
+      "title": "Workspace",
+      "description": "Application state for a specific teacher's workspace",
+      "type": "object",
+      "properties": {
+        "version": { "type": "string" },
+        "ownerUserId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["version", "ownerUserId"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "Global system configuration",
+      "type": "object",
+      "properties": {
+        "schoolLogo": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user accounts"
+    },
+    "workspaces/{workspaceId}": {
+      "schema": "Workspace",
+      "description": "Collection of isolated workspaces"
+    },
+    "system/config": {
+      "schema": "SystemConfig",
+      "description": "Global system configuration document"
+    }
+  }
+}
