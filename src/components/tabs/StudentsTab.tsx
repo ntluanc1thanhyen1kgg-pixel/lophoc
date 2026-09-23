@@ -19,8 +19,11 @@ import {
   X,
   AlertCircle,
   Eye,
-  Filter
+  Filter,
+  FileSpreadsheet,
+  Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { AppState, Student, SeatingConfig } from '../../types';
 import { Avatar } from '../Avatar';
 import { uid, compressImageFile, removeVietnameseTones } from '../../utils/helpers';
@@ -420,6 +423,100 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
     setPasteModalOpen(false);
   };
 
+  const handleDownloadSampleExcel = () => {
+    const sampleRows = [
+      {
+        'STT': 1,
+        'Họ và tên': 'Nguyễn Văn An',
+        'Giới tính': 'Nam',
+        'Ghi chú': 'Lớp trưởng'
+      },
+      {
+        'STT': 2,
+        'Họ và tên': 'Trần Thị Bích',
+        'Giới tính': 'Nữ',
+        'Ghi chú': 'Lớp phó học tập'
+      },
+      {
+        'STT': 3,
+        'Họ và tên': 'Lê Hoàng Cường',
+        'Giới tính': 'Nam',
+        'Ghi chú': 'Tổ trưởng tổ 1'
+      },
+      {
+        'STT': 4,
+        'Họ và tên': 'Phạm Mỹ Duyên',
+        'Giới tính': 'Nữ',
+        'Ghi chú': 'Thành viên'
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleRows);
+    worksheet['!cols'] = [
+      { wch: 6 },
+      { wch: 25 },
+      { wch: 12 },
+      { wch: 25 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Danh_Sach_Hoc_Sinh');
+    XLSX.writeFile(workbook, `Mau_Danh_Sach_Hoc_Sinh_Lop_${activeClass?.name || 'Moi'}.xlsx`);
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws);
+
+        if (rows.length === 0) {
+          alert('File Excel không có dữ liệu!');
+          return;
+        }
+
+        const newStudents: Student[] = rows.map((r) => {
+          const rawName = r['Họ và tên'] || r['HoVaTen'] || r['Họ tên'] || r['Name'] || '';
+          const gender = (r['Giới tính'] || r['GioiTinh'] || 'Nữ').toString().trim();
+          const note = (r['Ghi chú'] || r['GhiChu'] || '').toString().trim();
+          return {
+            id: uid('s'),
+            classId: state.activeClassId,
+            name: rawName.toString().trim(),
+            gender: gender === 'Nam' ? 'Nam' : 'Nữ',
+            coins: 0,
+            avatar: '',
+            favorite: false,
+            note
+          };
+        }).filter((s) => s.name.length > 0);
+
+        if (newStudents.length > 0) {
+          onUpdateState((prev) => ({
+            ...prev,
+            students: [...prev.students, ...newStudents]
+          }));
+          setToastMessage(`Đã nhập thành công ${newStudents.length} học sinh từ file Excel!`);
+          setTimeout(() => setToastMessage(null), 3500);
+        } else {
+          alert('Không tìm thấy cột "Họ và tên" hợp lệ trong file Excel!');
+        }
+      } catch (err) {
+        console.error('Import excel error:', err);
+        alert('Có lỗi khi đọc file Excel. Vui lòng kiểm tra lại!');
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
+  };
+
   const handleResetAllCoins = () => {
     if (
       !window.confirm(
@@ -501,6 +598,27 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
             <span>Đặt hoa về 0</span>
           </button>
+
+          <button
+            type="button"
+            onClick={handleDownloadSampleExcel}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold text-xs transition-all cursor-pointer shadow-2xs"
+            title="Tải file mẫu Excel để nhập danh sách học sinh nhanh"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>File mẫu Excel</span>
+          </button>
+
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-2xl border border-teal-200 text-teal-800 hover:bg-teal-50 font-bold text-xs transition-all cursor-pointer">
+            <Upload className="w-3.5 h-3.5 text-teal-600" />
+            <span>Nhập Excel</span>
+            <input
+              type="file"
+              accept=".xlsx, .xls"
+              onChange={handleImportExcel}
+              className="hidden"
+            />
+          </label>
 
           <button
             onClick={() => setPasteModalOpen(true)}
@@ -1001,8 +1119,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                   <input
                     type="number"
                     min={0}
-                    value={formCoins}
-                    onChange={(e) => setFormCoins(Math.max(0, parseInt(e.target.value) || 0))}
+                    value={isNaN(formCoins) ? 0 : formCoins}
+                    onChange={(e) => setFormCoins(Math.max(0, parseInt(e.target.value, 10) || 0))}
                     className="w-full px-3.5 py-2.5 rounded-2xl border-2 border-slate-200 focus:border-teal-500 focus:outline-none text-sm font-semibold"
                   />
                 </div>

@@ -79,7 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'document', label: 'Kế hoạch dạy học', icon: FileText },
     { id: 'ppct', label: 'Phân phối CT', icon: BookOpen },
     { id: 'tkb', label: 'Thời khóa biểu', icon: Calendar },
-    { id: 'ai', label: 'Trợ lý AI Gemini', icon: Sparkles, badge: 'AI' },
+    { id: 'ai', label: 'SOẠN GIÁO ÁN', icon: Sparkles, badge: 'AI' },
     { id: 'settings', label: 'Cấu hình văn bản', icon: Settings }
   ];
 
@@ -187,7 +187,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               />
               <div>
                 <h2 className="font-extrabold text-teal-800 text-[15px] leading-tight tracking-tight">
-                  LỚP HỌC VUI NHỘN
+                  HỒ SƠ GIÁO DỤC
                 </h2>
                 <span className="text-[11px] font-semibold text-slate-500 block mt-0.5">
                   Bảng điều khiển giáo viên
@@ -313,7 +313,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ) : (
             <div className="space-y-1 animate-in fade-in duration-150">
               <div className="flex items-center justify-between px-2 py-0.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                <span>Kế hoạch dạy học</span>
+                <span>KẾ HOẠCH DẠY HỌC</span>
                 <span>{khdhItems.length} mục</span>
               </div>
               <nav className="space-y-0.5">

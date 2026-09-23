@@ -20,7 +20,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'document' as KhdhTabId, label: 'Kế hoạch dạy học', icon: FileText },
     { id: 'ppct' as KhdhTabId, label: 'Phân phối CT', icon: BookOpen },
     { id: 'tkb' as KhdhTabId, label: 'Thời khóa biểu', icon: Calendar },
-    { id: 'ai' as KhdhTabId, label: 'Trợ lý AI Gemini', icon: Sparkles, badge: 'AI' },
+    { id: 'ai' as KhdhTabId, label: 'SOẠN GIÁO ÁN', icon: Sparkles, badge: 'AI' },
     { id: 'settings' as KhdhTabId, label: 'Cấu hình văn bản', icon: Settings }
   ];
 

@@ -193,7 +193,9 @@ export const StatsTab: React.FC<StatsTabProps> = ({ state }) => {
 
             <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
               {sortedStudents.map((s, idx) => {
-                const pct = Math.max(5, Math.round(((s.coins || 0) / maxCoins) * 100));
+                const safeMaxCoins = Math.max(1, maxCoins || 0);
+                const rawPct = Math.round(((s.coins || 0) / safeMaxCoins) * 100);
+                const pct = isNaN(rawPct) ? 5 : Math.max(5, Math.min(100, rawPct));
 
                 return (
                   <div
@@ -242,8 +244,9 @@ export const StatsTab: React.FC<StatsTabProps> = ({ state }) => {
 
             <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
               {Object.entries(subjectCoinMap).map(([subject, coins]) => {
-                const maxSubjectCoins = Math.max(1, ...Object.values(subjectCoinMap));
-                const pct = Math.max(8, Math.round((Math.abs(coins) / maxSubjectCoins) * 100));
+                const maxSubjectCoins = Math.max(1, ...Object.values(subjectCoinMap).map((v) => Math.abs(v) || 0));
+                const rawPct = Math.round((Math.abs(coins) / maxSubjectCoins) * 100);
+                const pct = isNaN(rawPct) ? 8 : Math.max(8, Math.min(100, rawPct));
 
                 return (
                   <div key={subject} className="space-y-1">

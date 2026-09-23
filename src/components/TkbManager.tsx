@@ -14,8 +14,11 @@ import {
   Settings,
   GraduationCap,
   Sparkles,
-  Download
+  Download,
+  Upload,
+  FileSpreadsheet
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { TimetableSlot } from '../types';
 import { getDayOfWeekName } from '../utils/dateUtils';
 
@@ -420,6 +423,124 @@ export const TkbManager: React.FC<TkbManagerProps> = ({
     setSelectedSlot(null);
   };
 
+  const handleDownloadSampleExcel = () => {
+    const sampleRows = [
+      {
+        'Thứ': 2,
+        'Buổi': 'Sáng',
+        'Tiết': 1,
+        'Tên Lớp': '3A1',
+        'Môn Học': 'Tin học'
+      },
+      {
+        'Thứ': 2,
+        'Buổi': 'Sáng',
+        'Tiết': 2,
+        'Tên Lớp': '3A2',
+        'Môn Học': 'Tin học'
+      },
+      {
+        'Thứ': 2,
+        'Buổi': 'Chiều',
+        'Tiết': 1,
+        'Tên Lớp': '4A1',
+        'Môn Học': 'Tin học'
+      },
+      {
+        'Thứ': 3,
+        'Buổi': 'Sáng',
+        'Tiết': 1,
+        'Tên Lớp': '5A1',
+        'Môn Học': 'Tin học'
+      },
+      {
+        'Thứ': 3,
+        'Buổi': 'Sáng',
+        'Tiết': 2,
+        'Tên Lớp': '5A2',
+        'Môn Học': 'Tin học'
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleRows);
+    worksheet['!cols'] = [
+      { wch: 8 },
+      { wch: 10 },
+      { wch: 8 },
+      { wch: 15 },
+      { wch: 20 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Thoi_Khoa_Bieu');
+    XLSX.writeFile(workbook, 'Mau_Thoi_Khoa_Bieu_Excel.xlsx');
+  };
+
+  const handleExportExcel = () => {
+    const exportData = timetable.map((s) => ({
+      'Thứ': s.dayOfWeek,
+      'Buổi': s.session === 'morning' ? 'Sáng' : 'Chiều',
+      'Tiết': s.period,
+      'Tên Lớp': s.className,
+      'Môn Học': s.subject
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'TKB');
+    XLSX.writeFile(workbook, 'Thoi_Khoa_Bieu_Giang_Day.xlsx');
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws);
+
+        if (rows.length === 0) {
+          alert('File Excel không có dữ liệu!');
+          return;
+        }
+
+        const newSlots: TimetableSlot[] = rows.map((r) => {
+          const rawDay = Number(r['Thứ'] || r['Thu'] || r['Day'] || 2);
+          const rawSessionStr = (r['Buổi'] || r['Buoi'] || r['Session'] || 'Sáng').toString().toLowerCase();
+          const session: 'morning' | 'afternoon' = rawSessionStr.includes('chiều') || rawSessionStr.includes('afternoon') ? 'afternoon' : 'morning';
+          const period = Number(r['Tiết'] || r['Tiet'] || r['Period'] || 1);
+          const className = (r['Tên Lớp'] || r['Lớp'] || r['Lop'] || r['Class'] || '3A1').toString().trim();
+          const subject = (r['Môn Học'] || r['Môn'] || r['Mon'] || r['Subject'] || 'Tin học').toString().trim();
+          const gradeMatch = className.match(/^(1[0-2]|[1-9])/);
+          const grade = gradeMatch ? Number(gradeMatch[1]) : 3;
+
+          return {
+            id: `tkb-${rawDay}-${session}-${period}`,
+            dayOfWeek: rawDay,
+            session,
+            period,
+            className,
+            subject,
+            grade
+          };
+        });
+
+        onUpdateTimetable(newSlots);
+        alert(`Đã nhập thành công ${newSlots.length} tiết vào Thời khóa biểu!`);
+      } catch (err) {
+        console.error('Import TKB error:', err);
+        alert('Có lỗi khi đọc file Excel TKB. Vui lòng kiểm tra định dạng!');
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
+  };
+
   const handleClearSlot = () => {
     if (!selectedSlot) return;
     const { day, session, period } = selectedSlot;
@@ -629,12 +750,43 @@ export const TkbManager: React.FC<TkbManagerProps> = ({
 
           <button
             type="button"
+            onClick={handleDownloadSampleExcel}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 transition-all cursor-pointer shadow-2xs"
+            title="Tải tệp Excel mẫu để xếp Thời khóa biểu nhanh"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>Tải file mẫu Excel</span>
+          </button>
+
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer">
+            <Upload className="w-4 h-4 text-teal-600" />
+            <span>Nhập Excel</span>
+            <input
+              type="file"
+              accept=".xlsx, .xls"
+              onChange={handleImportExcel}
+              className="hidden"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+            title="Xuất Thời khóa biểu hiện tại ra file Excel"
+          >
+            <Download className="w-4 h-4 text-indigo-600" />
+            <span>Xuất Excel</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setShowClassConfigModal(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 transition-all cursor-pointer shadow-2xs"
             title="Cấu hình danh sách các lớp học phụ trách giảng dạy"
           >
             <Settings className="w-4 h-4 text-teal-600" />
-            <span>Cấu hình lớp học</span>
+            <span>Cấu hình lớp</span>
           </button>
 
           <button
@@ -885,8 +1037,8 @@ export const TkbManager: React.FC<TkbManagerProps> = ({
                     </span>
                   </div>
                   <select
-                    value={inputGrade}
-                    onChange={(e) => setInputGrade(Number(e.target.value))}
+                    value={isNaN(inputGrade) ? 0 : inputGrade}
+                    onChange={(e) => setInputGrade(parseInt(e.target.value, 10) || 0)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-400 bg-white"
                   >
                     <option value={0}>0 - Chung / Đặc biệt (Chào cờ, SHL...)</option>
@@ -1005,8 +1157,8 @@ export const TkbManager: React.FC<TkbManagerProps> = ({
                       Khối lớp
                     </label>
                     <select
-                      value={newClassGrade}
-                      onChange={(e) => setNewClassGrade(Number(e.target.value))}
+                      value={isNaN(newClassGrade) ? 0 : newClassGrade}
+                      onChange={(e) => setNewClassGrade(parseInt(e.target.value, 10) || 0)}
                       className="w-full px-2.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
                     >
                       <option value={0}>0 - Chung</option>

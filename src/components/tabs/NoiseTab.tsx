@@ -274,18 +274,18 @@ export const NoiseTab: React.FC = () => {
         <div>
           <div className="flex items-center justify-between text-xs font-bold mb-1.5">
             <span className="text-slate-600">Mức độ tiếng ồn hiện tại:</span>
-            <span className="font-black text-teal-800 text-sm">{noiseLevel}%</span>
+            <span className="font-black text-teal-800 text-sm">{isNaN(noiseLevel) ? 0 : noiseLevel}%</span>
           </div>
           <div className="w-full bg-slate-100 rounded-full h-5 overflow-hidden p-0.5 border border-slate-200">
             <div
               className={`h-full rounded-full transition-all duration-100 ${
-                noiseLevel < 40
+                (isNaN(noiseLevel) ? 0 : noiseLevel) < 40
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
-                  : noiseLevel < 70
+                  : (isNaN(noiseLevel) ? 0 : noiseLevel) < 70
                   ? 'bg-gradient-to-r from-amber-500 to-orange-500'
                   : 'bg-gradient-to-r from-orange-500 to-rose-600 animate-pulse'
               }`}
-              style={{ width: `${noiseLevel}%` }}
+              style={{ width: `${isNaN(noiseLevel) ? 0 : Math.max(0, Math.min(100, noiseLevel))}%` }}
             />
           </div>
         </div>

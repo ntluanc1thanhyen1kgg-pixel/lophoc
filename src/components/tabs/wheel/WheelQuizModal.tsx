@@ -193,7 +193,8 @@ export const WheelQuizModal: React.FC<WheelQuizModalProps> = ({
   const isCorrectAnswer = selectedIdx !== null && selectedIdx === correctDisplayIndex;
 
   // Progress percentage for timer bar
-  const timerPercent = Math.max(0, Math.min(100, (timeLeft / durationSeconds) * 100));
+  const rawPercent = durationSeconds > 0 ? (timeLeft / durationSeconds) * 100 : 0;
+  const timerPercent = isNaN(rawPercent) ? 0 : Math.max(0, Math.min(100, rawPercent));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/70 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">

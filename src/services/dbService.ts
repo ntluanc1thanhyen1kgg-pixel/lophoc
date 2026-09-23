@@ -8,7 +8,7 @@ import {
   getDocFromServer
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { UserAccount, AppState } from '../types';
+import { UserAccount, AppState, SchoolConfig, PpctItem, TimetableSlot, LessonPlanRow } from '../types';
 import { getDefaultState } from '../utils/helpers';
 
 // Operation types for error handling
@@ -275,6 +275,58 @@ export async function loadAppStateFromFirestore(
     console.error('Failed to load classroom state from Firestore:', err);
     return null;
   }
+}
+
+/**
+ * Save KHDH Data to Firestore
+ */
+export async function saveKhdhDataToFirestore(
+  userId: string,
+  data: {
+    config: SchoolConfig;
+    ppctList: PpctItem[];
+    timetable: TimetableSlot[];
+    customizedWeeks: Record<number, LessonPlanRow[]>;
+  }
+): Promise<boolean> {
+  const path = `khdh_data/${userId || 'shared'}`;
+  try {
+    const docRef = doc(db, 'khdh_data', userId || 'shared');
+    await setDoc(docRef, {
+      ...data,
+      userId: userId || 'shared',
+      updatedAt: new Date().toISOString()
+    });
+    return true;
+  } catch (err: any) {
+    if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
+      console.warn('Firestore unavailable, KHDH data saved locally only.');
+      return false;
+    }
+    console.warn('Save KHDH data Firestore notice:', err?.message || err);
+    return false;
+  }
+}
+
+/**
+ * Load KHDH Data from Firestore
+ */
+export async function loadKhdhDataFromFirestore(userId: string): Promise<{
+  config?: SchoolConfig;
+  ppctList?: PpctItem[];
+  timetable?: TimetableSlot[];
+  customizedWeeks?: Record<number, LessonPlanRow[]>;
+} | null> {
+  try {
+    const docRef = doc(db, 'khdh_data', userId || 'shared');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as any;
+    }
+  } catch (err) {
+    console.warn('Load KHDH data Firestore notice:', err);
+  }
+  return null;
 }
 
 /**

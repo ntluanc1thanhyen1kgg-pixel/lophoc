@@ -36,6 +36,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   onResetWeekRows
 }) => {
   const [currentWeek, setCurrentWeek] = useState<number>(1);
+  const [displayFontSize, setDisplayFontSize] = useState<number>(13); // Default font size 13
   const [editingRow, setEditingRow] = useState<LessonPlanRow | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -62,33 +63,77 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       return a.period - b.period;
     });
 
+    // Hàm tự động nhận dạng Khối lớp từ slot.grade hoặc từ tên lớp (VD: "3A1" -> Khối 3, "4A2" -> Khối 4)
+    const detectGrade = (slotGrade?: number | string, classNameStr?: string): number => {
+      if (slotGrade && Number(slotGrade) > 0) return Number(slotGrade);
+      if (classNameStr) {
+        const match = classNameStr.match(/\d+/);
+        if (match) return parseInt(match[0], 10);
+      }
+      return 0;
+    };
+
     // Theo dõi số tiết đã dạy của từng khối/môn trong tuần
     const subjectOccurrences: Record<string, number> = {};
 
     return sortedSlots.map((slot, index) => {
-      const key = `${slot.grade}_${slot.subject}`;
+      const classGrade = detectGrade(slot.grade, slot.className);
+      const cleanSlotSubj = (slot.subject || '').trim().toLowerCase();
+      const key = `${classGrade}_${cleanSlotSubj}`;
       const count = (subjectOccurrences[key] || 0) + 1;
       subjectOccurrences[key] = count;
 
-      // Tìm bài dạy trong PPCT theo khối, môn, tuần và số thứ tự tiết trong tuần
-      const matchingPpct = ppctList.find(
+      // Tự động nhận dạng bài dạy từ PPCT theo Khối, Môn, Tuần và Thứ tự tiết trong tuần:
+      // 1. Khớp chính xác: Khối lớp + Tên Môn + Tuần + Thứ tự tiết trong tuần
+      let matchingPpct = ppctList.find(
         (p) =>
-          Number(p.grade) === Number(slot.grade) &&
-          p.subject.trim().toLowerCase() === slot.subject.trim().toLowerCase() &&
+          Number(p.grade) === classGrade &&
+          p.subject.trim().toLowerCase() === cleanSlotSubj &&
           Number(p.week) === currentWeek &&
           Number(p.periodIndex) === count
-      ) || ppctList.find(
-        (p) =>
-          Number(p.grade) === Number(slot.grade) &&
-          p.subject.trim().toLowerCase() === slot.subject.trim().toLowerCase() &&
-          Number(p.week) === currentWeek
       );
+
+      // 2. Nếu không có count chính xác, khớp theo Khối + Môn + Tuần
+      if (!matchingPpct) {
+        const matchesForWeek = ppctList.filter(
+          (p) =>
+            Number(p.grade) === classGrade &&
+            p.subject.trim().toLowerCase() === cleanSlotSubj &&
+            Number(p.week) === currentWeek
+        );
+        if (matchesForWeek.length > 0) {
+          matchingPpct = matchesForWeek[count - 1] || matchesForWeek[0];
+        }
+      }
+
+      // 3. Khớp mờ theo Tên môn học (VD: "Tin học" & "Tin học - Công nghệ")
+      if (!matchingPpct && cleanSlotSubj) {
+        matchingPpct = ppctList.find(
+          (p) =>
+            Number(p.grade) === classGrade &&
+            (p.subject.toLowerCase().includes(cleanSlotSubj) || cleanSlotSubj.includes(p.subject.toLowerCase())) &&
+            Number(p.week) === currentWeek
+        );
+      }
 
       const dateStr = getDateForDayOfWeek(
         config.startDateWeek1 || '2024-09-09',
         currentWeek,
         slot.dayOfWeek
       );
+
+      // Nhận dạng tên bài học mặc định thông minh nếu không tìm thấy trong PPCT
+      let defaultLessonName = `Bài dạy Môn ${slot.subject} (Tuần ${currentWeek})`;
+      const lowerSubj = cleanSlotSubj;
+      if (lowerSubj.includes('chào cờ')) {
+        defaultLessonName = 'Chào cờ đầu tuần';
+      } else if (lowerSubj.includes('sinh hoạt lớp') || lowerSubj === 'shl') {
+        defaultLessonName = 'Sinh hoạt lớp cuối tuần';
+      } else if (lowerSubj.includes('hoạt động trải nghiệm') || lowerSubj === 'hđtn') {
+        defaultLessonName = `Hoạt động trải nghiệm - Tuần ${currentWeek}`;
+      } else if (classGrade > 0) {
+        defaultLessonName = `Bài dạy Khối ${classGrade} (Tuần ${currentWeek})`;
+      }
 
       return {
         id: `row-${currentWeek}-${slot.id || index}`,
@@ -98,7 +143,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         period: slot.period,
         className: slot.className,
         subject: slot.subject,
-        lessonName: matchingPpct?.lessonName || (slot.subject === 'Chào cờ' ? 'Chào cờ đầu tuần' : slot.subject === 'Sinh hoạt lớp' ? 'Sinh hoạt lớp cuối tuần' : `Bài học tuần ${currentWeek}`),
+        lessonName: matchingPpct?.lessonName || defaultLessonName,
         integrationNote: matchingPpct?.integrationNote || '',
         isCustomized: false
       };
@@ -124,6 +169,15 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       return a.period - b.period;
     });
   }, [displayRows]);
+
+  // Tự động điều chỉnh khoảng cách dòng (padding) để nội dung tự co giãn vừa đẹp trên trang A4
+  const dynamicCellPy = useMemo(() => {
+    const total = sortedDisplayRows.length;
+    if (total <= 10) return 'py-2.5';
+    if (total <= 14) return 'py-1.5';
+    if (total <= 18) return 'py-1';
+    return 'py-0.5';
+  }, [sortedDisplayRows.length]);
 
   // Tính toán gộp ô (rowSpan) cho Thứ và Buổi giống hệt mẫu đính kèm
   const rowSpanData = useMemo(() => {
@@ -303,6 +357,23 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+          {/* Thay đổi cỡ chữ hiển thị */}
+          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700">
+            <span>Cỡ chữ:</span>
+            <select
+              value={displayFontSize}
+              onChange={(e) => setDisplayFontSize(Number(e.target.value))}
+              className="bg-transparent font-black text-teal-800 text-xs focus:outline-none cursor-pointer"
+            >
+              <option value={11}>11 px</option>
+              <option value={12}>12 px</option>
+              <option value={13}>13 px (Chuẩn)</option>
+              <option value={14}>14 px</option>
+              <option value={15}>15 px</option>
+              <option value={16}>16 px</option>
+            </select>
+          </div>
+
           <button
             type="button"
             onClick={handleAddRow}
@@ -342,13 +413,13 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white shadow-md shadow-teal-600/25 transition-all cursor-pointer disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
-            <span>{isExporting ? 'Đang xuất...' : 'Xuất Word (.docx)'}</span>
+            <span>{isExporting ? 'Đang xuất...' : 'Xuất Word (cỡ 13)'}</span>
           </button>
         </div>
       </div>
 
-      {/* Main Document Layout - Styled exactly like the attached PDF sample */}
-      <div className="bg-white rounded-2xl p-6 sm:p-12 border border-slate-300 shadow-xl shadow-slate-200/50 print:shadow-none print:border-none print:p-0 max-w-5xl mx-auto font-serif text-slate-900">
+      {/* Main Document Layout - Styled like standard A4 paper with auto-scaling */}
+      <div className="a4-paper-frame p-6 sm:p-10 font-serif text-slate-900 my-4">
         {/* Document Header (Trường & Tổ chuyên môn bên trái, Quốc hiệu bên phải) */}
         <div className="grid grid-cols-2 gap-4 text-center mb-6">
           <div className="flex flex-col items-center">
@@ -376,7 +447,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         </div>
 
         {/* Title */}
-        <div className="text-center my-6 space-y-1">
+        <div className="text-center my-5 space-y-1">
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 uppercase tracking-tight">
             {config.documentTitle || 'KẾ HOẠCH DẠY HỌC'}
           </h2>
@@ -390,20 +461,23 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
         {/* Table of Lessons matching attached PDF */}
         <div className="overflow-x-auto my-4">
-          <table className="w-full text-xs border-collapse border border-black text-slate-900">
+          <table
+            style={{ fontSize: `${displayFontSize}px` }}
+            className="w-full border-collapse border border-black text-slate-900"
+          >
             <thead>
-              <tr className="bg-white text-slate-900 text-center font-bold text-xs uppercase">
-                <th className="py-2.5 px-2 border border-black w-24 align-middle">THỨ</th>
-                <th className="py-2.5 px-2 border border-black w-18 align-middle">BUỔI</th>
-                <th className="py-2.5 px-2 border border-black w-14 align-middle">TIẾT</th>
-                <th className="py-2.5 px-2 border border-black w-18 align-middle">LỚP</th>
-                <th className="py-2.5 px-2 border border-black w-28 align-middle">MÔN</th>
-                <th className="py-2.5 px-3 border border-black min-w-[240px] align-middle">TÊN BÀI DẠY</th>
-                <th className="py-2.5 px-2 border border-black min-w-[160px] align-middle text-center">
+              <tr className="bg-white text-slate-900 text-center font-bold uppercase">
+                <th className={`px-2 border border-black w-24 align-middle ${dynamicCellPy}`}>THỨ</th>
+                <th className={`px-2 border border-black w-18 align-middle ${dynamicCellPy}`}>BUỔI</th>
+                <th className={`px-2 border border-black w-14 align-middle ${dynamicCellPy}`}>TIẾT</th>
+                <th className={`px-2 border border-black w-18 align-middle ${dynamicCellPy}`}>LỚP</th>
+                <th className={`px-2 border border-black w-28 align-middle ${dynamicCellPy}`}>MÔN</th>
+                <th className={`px-3 border border-black min-w-[240px] align-middle ${dynamicCellPy}`}>TÊN BÀI DẠY</th>
+                <th className={`px-2 border border-black min-w-[160px] align-middle text-center ${dynamicCellPy}`}>
                   <div className="leading-tight">ĐIỀU CHỈNH/</div>
                   <div className="leading-tight">TÍCH HỢP</div>
                 </th>
-                <th className="py-2.5 px-1 border border-black w-14 print:hidden align-middle">TÁC VỤ</th>
+                <th className={`px-1 border border-black w-14 print:hidden align-middle ${dynamicCellPy}`}>TÁC VỤ</th>
               </tr>
             </thead>
             <tbody>
@@ -441,7 +515,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                     {daySpan > 0 && (
                       <td
                         rowSpan={daySpan}
-                        className="py-2 px-2 text-center border border-black font-bold align-middle bg-white text-slate-900"
+                        className={`px-2 text-center border border-black font-bold align-middle bg-white text-slate-900 ${dynamicCellPy}`}
                       >
                         <div className="font-bold whitespace-nowrap">{getDayOfWeekName(row.dayOfWeek)}</div>
                         <div className="text-[10px] text-slate-500 font-normal">({row.dateStr})</div>
@@ -452,45 +526,45 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                     {sessionSpan > 0 && (
                       <td
                         rowSpan={sessionSpan}
-                        className="py-2 px-2 text-center border border-black font-bold align-middle bg-white text-slate-900"
+                        className={`px-2 text-center border border-black font-bold align-middle bg-white text-slate-900 ${dynamicCellPy}`}
                       >
                         {row.session}
                       </td>
                     )}
 
                     {/* TIẾT */}
-                    <td className="py-2 px-1 text-center border border-black font-bold align-middle">
+                    <td className={`px-1 text-center border border-black font-bold align-middle ${dynamicCellPy}`}>
                       {row.period}
                     </td>
 
                     {/* LỚP */}
-                    <td className="py-2 px-2 text-center border border-black font-bold align-middle">
+                    <td className={`px-2 text-center border border-black font-bold align-middle ${dynamicCellPy}`}>
                       {row.className}
                     </td>
 
                     {/* MÔN */}
-                    <td className="py-2 px-2 text-center border border-black align-middle">
+                    <td className={`px-2 text-center border border-black align-middle ${dynamicCellPy}`}>
                       {row.subject}
                     </td>
 
                     {/* TÊN BÀI DẠY */}
-                    <td className="py-1.5 px-2 text-left border border-black align-middle font-medium">
+                    <td className={`px-2 text-left border border-black align-middle font-medium ${dynamicCellPy}`}>
                       <input
                         type="text"
                         value={row.lessonName}
                         onChange={(e) => handleInlineChange(row.id, 'lessonName', e.target.value)}
-                        className="w-full bg-transparent hover:bg-slate-50 focus:bg-white px-1.5 py-1 rounded border border-transparent hover:border-slate-300 focus:border-teal-500 focus:outline-none transition-all text-xs"
+                        className="w-full bg-transparent hover:bg-slate-50 focus:bg-white px-1.5 py-0.5 rounded border border-transparent hover:border-slate-300 focus:border-teal-500 focus:outline-none transition-all"
                       />
                     </td>
 
                     {/* ĐIỀU CHỈNH/ TÍCH HỢP */}
-                    <td className="py-1.5 px-2 text-left border border-black align-middle">
+                    <td className={`px-2 text-left border border-black align-middle ${dynamicCellPy}`}>
                       <input
                         type="text"
                         value={row.integrationNote || ''}
                         placeholder="..."
                         onChange={(e) => handleInlineChange(row.id, 'integrationNote', e.target.value)}
-                        className="w-full bg-transparent hover:bg-slate-50 focus:bg-white px-1.5 py-1 rounded border border-transparent hover:border-slate-300 focus:border-teal-500 focus:outline-none transition-all text-xs"
+                        className="w-full bg-transparent hover:bg-slate-50 focus:bg-white px-1.5 py-0.5 rounded border border-transparent hover:border-slate-300 focus:border-teal-500 focus:outline-none transition-all"
                       />
                     </td>
 
@@ -567,7 +641,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 {/* Khoảng trống ký tên */}
               </div>
               <p className="text-xs sm:text-sm font-bold text-slate-900">
-                {config.teacherName || 'Nguyễn Tấn Luận'}
+                {config.teacherName || 'Nguyễn Thành Luân'}
               </p>
             </div>
           </div>

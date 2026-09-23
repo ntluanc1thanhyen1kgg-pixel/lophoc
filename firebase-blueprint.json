@@ -1,8 +1,8 @@
 {
   "entities": {
     "User": {
-      "title": "User",
-      "description": "User account information",
+      "title": "User Account",
+      "description": "System user account",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -14,47 +14,86 @@
         "subject": { "type": "string" },
         "school": { "type": "string" },
         "year": { "type": "string" },
+        "assignedClassIds": { "type": "array" },
         "status": { "type": "string", "enum": ["active", "locked"] },
+        "avatar": { "type": "string" },
+        "phone": { "type": "string" },
         "note": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "avatar": { "type": "string" }
+        "createdAt": { "type": "string" },
+        "lastLogin": { "type": "string" }
       },
-      "required": ["id", "username", "email", "name", "role", "password"]
+      "required": ["id", "username", "role", "name"]
     },
     "Workspace": {
-      "title": "Workspace",
-      "description": "Application state for a specific teacher's workspace",
+      "title": "Teacher Workspace State",
+      "description": "Classroom management workspace for a teacher",
       "type": "object",
       "properties": {
-        "version": { "type": "string" },
+        "version": { "type": "number" },
         "ownerUserId": { "type": "string" },
         "ownerName": { "type": "string" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "updatedAt": { "type": "string" },
+        "activeClassId": { "type": "string" },
+        "teacher": { "type": "object" },
+        "classes": { "type": "array" },
+        "students": { "type": "array" },
+        "attendance": { "type": "object" },
+        "seating": { "type": "object" },
+        "timetable": { "type": "object" },
+        "rewards": { "type": "array" },
+        "redemptions": { "type": "array" },
+        "transactions": { "type": "array" },
+        "wheelHistory": { "type": "array" },
+        "filmHistory": { "type": "array" },
+        "links": { "type": "array" },
+        "subjects": { "type": "array" },
+        "settings": { "type": "object" },
+        "quizQuestions": { "type": "array" },
+        "questionFolders": { "type": "array" }
       },
-      "required": ["version", "ownerUserId"]
+      "required": ["version", "updatedAt"]
+    },
+    "KhdhData": {
+      "title": "KHDH Data",
+      "description": "Teaching schedule and syllabus distribution data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "config": { "type": "object" },
+        "ppctList": { "type": "array" },
+        "timetable": { "type": "array" },
+        "customizedWeeks": { "type": "object" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "updatedAt"]
     },
     "SystemConfig": {
-      "title": "SystemConfig",
-      "description": "Global system configuration",
+      "title": "System Configuration",
+      "description": "Global system parameters and branding",
       "type": "object",
       "properties": {
         "schoolLogo": { "type": "string" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "schoolName": { "type": "string" },
+        "updatedAt": { "type": "string" }
       }
     }
   },
   "firestore": {
-    "users/{userId}": {
+    "/users/{userId}": {
       "schema": "User",
-      "description": "Collection of user accounts"
+      "description": "Collection of system user accounts"
     },
-    "workspaces/{workspaceId}": {
+    "/workspaces/{workspaceId}": {
       "schema": "Workspace",
-      "description": "Collection of isolated workspaces"
+      "description": "Collection of teacher workspace application states"
     },
-    "system/config": {
+    "/khdh_data/{userId}": {
+      "schema": "KhdhData",
+      "description": "Teaching schedule & PPCT data per user"
+    },
+    "/system/{docId}": {
       "schema": "SystemConfig",
-      "description": "Global system configuration document"
+      "description": "Global system configurations"
     }
   }
 }

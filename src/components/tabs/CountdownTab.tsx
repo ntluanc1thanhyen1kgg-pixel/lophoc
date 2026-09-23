@@ -235,8 +235,8 @@ export const CountdownTab: React.FC<CountdownTabProps> = ({ state, onUpdateState
                   type="number"
                   min={0}
                   max={12}
-                  value={inputHours}
-                  onChange={(e) => setInputHours(Math.max(0, parseInt(e.target.value) || 0))}
+                  value={isNaN(inputHours) ? 0 : inputHours}
+                  onChange={(e) => setInputHours(Math.max(0, parseInt(e.target.value, 10) || 0))}
                   className="w-full p-2.5 text-center font-black text-lg rounded-2xl border-2 border-slate-200 focus:border-teal-500 focus:outline-none"
                 />
                 <span className="text-[10px] font-bold text-slate-400 mt-1 block">GIỜ</span>
@@ -247,8 +247,8 @@ export const CountdownTab: React.FC<CountdownTabProps> = ({ state, onUpdateState
                   type="number"
                   min={0}
                   max={59}
-                  value={inputMinutes}
-                  onChange={(e) => setInputMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+                  value={isNaN(inputMinutes) ? 0 : inputMinutes}
+                  onChange={(e) => setInputMinutes(Math.max(0, parseInt(e.target.value, 10) || 0))}
                   className="w-full p-2.5 text-center font-black text-lg rounded-2xl border-2 border-slate-200 focus:border-teal-500 focus:outline-none"
                 />
                 <span className="text-[10px] font-bold text-slate-400 mt-1 block">PHÚT</span>
@@ -259,8 +259,8 @@ export const CountdownTab: React.FC<CountdownTabProps> = ({ state, onUpdateState
                   type="number"
                   min={0}
                   max={59}
-                  value={inputSeconds}
-                  onChange={(e) => setInputSeconds(Math.max(0, parseInt(e.target.value) || 0))}
+                  value={isNaN(inputSeconds) ? 0 : inputSeconds}
+                  onChange={(e) => setInputSeconds(Math.max(0, parseInt(e.target.value, 10) || 0))}
                   className="w-full p-2.5 text-center font-black text-lg rounded-2xl border-2 border-slate-200 focus:border-teal-500 focus:outline-none"
                 />
                 <span className="text-[10px] font-bold text-slate-400 mt-1 block">GIÂY</span>

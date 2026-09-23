@@ -4,7 +4,6 @@ import {
   Trash2,
   Edit3,
   RotateCcw,
-  Sparkles,
   Download,
   Upload,
   Search,
@@ -12,7 +11,9 @@ import {
   Save,
   X,
   BookOpen,
-  AlertTriangle
+  AlertTriangle,
+  FileSpreadsheet,
+  FileDown
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { PpctItem } from '../types';
@@ -34,9 +35,6 @@ export const PpctManager: React.FC<PpctManagerProps> = ({
   const [searchKeyword, setSearchKeyword] = useState<string>('');
   const [isAddingOrEditing, setIsAddingOrEditing] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<PpctItem | null>(null);
-  const [isGeneratingAi, setIsGeneratingAi] = useState<boolean>(false);
-  const [aiPromptTopic, setAiPromptTopic] = useState<string>('');
-  const [showAiModal, setShowAiModal] = useState<boolean>(false);
   const [showClearModal, setShowClearModal] = useState<boolean>(false);
 
   // Form state for add/edit
@@ -158,6 +156,77 @@ export const PpctManager: React.FC<PpctManagerProps> = ({
     setShowClearModal(false);
   };
 
+  const handleDownloadSampleExcel = () => {
+    const sampleRows = [
+      {
+        'STT': 1,
+        'Khối lớp': 3,
+        'Môn học': 'Tin học',
+        'Tuần': 1,
+        'Tiết theo PPCT': 1,
+        'Tên bài dạy': 'Bài 1. Thông tin và quyết định (Tiết 1)',
+        'Nội dung tích hợp / Điều chỉnh': '[1.3.CB1a] Truy cập và khai thác thông tin số',
+        'Ghi chú': 'Chủ đề 1. Máy tính và em'
+      },
+      {
+        'STT': 2,
+        'Khối lớp': 3,
+        'Môn học': 'Tin học',
+        'Tuần': 1,
+        'Tiết theo PPCT': 2,
+        'Tên bài dạy': 'Bài 1. Thông tin và quyết định (Tiết 2)',
+        'Nội dung tích hợp / Điều chỉnh': '[STEM] Thực hành phân loại thông tin',
+        'Ghi chú': 'Luyện tập & Vận dụng'
+      },
+      {
+        'STT': 3,
+        'Khối lớp': 3,
+        'Môn học': 'Tin học',
+        'Tuần': 2,
+        'Tiết theo PPCT': 3,
+        'Tên bài dạy': 'Bài 2. Xử lí thông tin (Tiết 1)',
+        'Nội dung tích hợp / Điều chỉnh': '[CĐS] An toàn và văn hóa trên môi trường số',
+        'Ghi chú': 'Khám phá kiến thức'
+      },
+      {
+        'STT': 4,
+        'Khối lớp': 4,
+        'Môn học': 'Tin học',
+        'Tuần': 1,
+        'Tiết theo PPCT': 1,
+        'Tên bài dạy': 'Bài 1. Phần cứng và phần mềm máy tính',
+        'Nội dung tích hợp / Điều chỉnh': '[NLS] Khai thác phần mềm học tập an toàn',
+        'Ghi chú': 'Chương trình GDPT 2018'
+      },
+      {
+        'STT': 5,
+        'Khối lớp': 5,
+        'Môn học': 'Tin học',
+        'Tuần': 1,
+        'Tiết theo PPCT': 1,
+        'Tên bài dạy': 'Bài 1. Máy tính và sự phát triển của thông tin',
+        'Nội dung tích hợp / Điều chỉnh': '[STEM] Tìm hiểu lịch sử máy tính',
+        'Ghi chú': 'Bài học mở đầu'
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleRows);
+    worksheet['!cols'] = [
+      { wch: 6 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 8 },
+      { wch: 16 },
+      { wch: 45 },
+      { wch: 45 },
+      { wch: 25 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Mau_Phan_Phoi_Chuong_Trinh');
+    XLSX.writeFile(workbook, 'Mau_Phan_Phoi_Chuong_Trinh_Excel.xlsx');
+  };
+
   const handleExportExcel = () => {
     const data = filteredList.map((item, idx) => ({
       STT: idx + 1,
@@ -216,85 +285,6 @@ export const PpctManager: React.FC<PpctManagerProps> = ({
     e.target.value = '';
   };
 
-  // AI Generation
-  const handleGenerateAiPpct = async () => {
-    if (!aiPromptTopic.trim()) {
-      alert('Vui lòng nhập chủ đề hoặc tên bài để AI tạo PPCT!');
-      return;
-    }
-
-    try {
-      setIsGeneratingAi(true);
-
-      // Call express API or client fallback
-      const response = await fetch('/api/gemini/generate-ppct', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: aiPromptTopic,
-          grade: selectedGrade !== 'all' ? selectedGrade : '3',
-          subject: selectedSubject !== 'all' ? selectedSubject : 'Tin học'
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.items && Array.isArray(result.items)) {
-          const generatedItems: PpctItem[] = result.items.map((it: any, idx: number) => ({
-            id: `ai-ppct-${Date.now()}-${idx}`,
-            grade: it.grade || (selectedGrade !== 'all' ? selectedGrade : 3),
-            subject: it.subject || (selectedSubject !== 'all' ? selectedSubject : 'Tin học'),
-            week: Number(it.week || Math.floor(idx / 2) + 1),
-            periodIndex: Number(it.periodIndex || idx + 1),
-            lessonName: it.lessonName || `Bài học ${idx + 1}`,
-            integrationNote: it.integrationNote || '',
-            notes: it.notes || 'Sinh bởi Gemini AI'
-          }));
-
-          onUpdatePpctList([...ppctList, ...generatedItems]);
-          setShowAiModal(false);
-          setAiPromptTopic('');
-          alert(`Đã tạo thành công ${generatedItems.length} tiết PPCT từ AI!`);
-          return;
-        }
-      }
-
-      // Fallback if backend API is not responding
-      const startPeriod = ppctList.length + 1;
-      const sampleGenerated: PpctItem[] = [
-        {
-          id: `ai-${Date.now()}-1`,
-          grade: selectedGrade !== 'all' ? Number(selectedGrade) : 3,
-          subject: selectedSubject !== 'all' ? selectedSubject : 'Tin học',
-          week: 1,
-          periodIndex: startPeriod,
-          lessonName: `Chuyên đề ${aiPromptTopic}: Khám phá và nhận biết kiến thức mới`,
-          integrationNote: 'Tích hợp giáo dục STEM và kỹ năng số',
-          notes: 'Tạo bởi AI Gemini'
-        },
-        {
-          id: `ai-${Date.now()}-2`,
-          grade: selectedGrade !== 'all' ? Number(selectedGrade) : 3,
-          subject: selectedSubject !== 'all' ? selectedSubject : 'Tin học',
-          week: 1,
-          periodIndex: startPeriod + 1,
-          lessonName: `Chuyên đề ${aiPromptTopic}: Thực hành vận dụng và trải nghiệm sáng tạo`,
-          integrationNote: 'Tích hợp bảo vệ môi trường & tư duy phản biện',
-          notes: 'Tạo bởi AI Gemini'
-        }
-      ];
-      onUpdatePpctList([...ppctList, ...sampleGenerated]);
-      setShowAiModal(false);
-      setAiPromptTopic('');
-      alert('Đã bổ sung 2 tiết PPCT theo chủ đề gợi ý!');
-    } catch (err) {
-      console.error('Error generating PPCT with AI:', err);
-      alert('Không thể kết nối AI. Vui lòng thử lại sau.');
-    } finally {
-      setIsGeneratingAi(false);
-    }
-  };
-
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Header card with filters and action buttons */}
@@ -318,20 +308,21 @@ export const PpctManager: React.FC<PpctManagerProps> = ({
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
             <button
               type="button"
-              onClick={() => setShowAiModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-md shadow-purple-600/20 transition-all cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Tạo PPCT bằng AI</span>
-            </button>
-
-            <button
-              type="button"
               onClick={handleOpenAddModal}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-teal-600 hover:bg-teal-700 text-white shadow-md shadow-teal-600/20 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Thêm tiết PPCT</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownloadSampleExcel}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs transition-all cursor-pointer"
+              title="Tải tệp Excel mẫu để nhập dữ liệu bài dạy nhanh chóng"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>Tải file mẫu Excel</span>
             </button>
 
             <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer">
@@ -459,7 +450,7 @@ export const PpctManager: React.FC<PpctManagerProps> = ({
                         Danh sách Phân phối chương trình hiện đang trống
                       </p>
                       <p className="text-xs text-slate-500 leading-relaxed">
-                        Thầy/cô có thể thêm bài dạy mới, nạp danh sách từ file Excel, sinh tự động bằng AI hoặc bấm nút khôi phục lại dữ liệu mẫu chuẩn.
+                        Thầy/cô có thể thêm bài dạy mới, nạp danh sách từ file Excel hoặc bấm nút khôi phục lại dữ liệu mẫu chuẩn.
                       </p>
                       <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                         <button
@@ -587,8 +578,8 @@ export const PpctManager: React.FC<PpctManagerProps> = ({
                     type="number"
                     min={1}
                     max={12}
-                    value={formGrade}
-                    onChange={(e) => setFormGrade(Number(e.target.value))}
+                    value={isNaN(formGrade) ? '' : formGrade}
+                    onChange={(e) => setFormGrade(parseInt(e.target.value, 10) || 1)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold"
                     required
                   />
@@ -616,8 +607,8 @@ export const PpctManager: React.FC<PpctManagerProps> = ({
                     type="number"
                     min={1}
                     max={35}
-                    value={formWeek}
-                    onChange={(e) => setFormWeek(Number(e.target.value))}
+                    value={isNaN(formWeek) ? '' : formWeek}
+                    onChange={(e) => setFormWeek(parseInt(e.target.value, 10) || 1)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold"
                     required
                   />
@@ -629,8 +620,8 @@ export const PpctManager: React.FC<PpctManagerProps> = ({
                   <input
                     type="number"
                     min={1}
-                    value={formPeriodIndex}
-                    onChange={(e) => setFormPeriodIndex(Number(e.target.value))}
+                    value={isNaN(formPeriodIndex) ? '' : formPeriodIndex}
+                    onChange={(e) => setFormPeriodIndex(parseInt(e.target.value, 10) || 1)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold"
                     required
                   />
@@ -694,65 +685,6 @@ export const PpctManager: React.FC<PpctManagerProps> = ({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Tạo PPCT bằng Gemini AI */}
-      {showAiModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-purple-200 overflow-hidden">
-            <div className="px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-300" />
-                <h3 className="font-black text-sm">Trợ lý AI Gemini tạo PPCT</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAiModal(false)}
-                className="p-1 rounded-full hover:bg-white/20 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Nhập chủ đề hoặc tên chương trình môn học. Gemini AI sẽ tự động phân tích và tạo cấu trúc PPCT kèm nội dung tích hợp chuẩn GDPT 2018.
-              </p>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Chủ đề / Yêu cầu
-                </label>
-                <input
-                  type="text"
-                  value={aiPromptTopic}
-                  onChange={(e) => setAiPromptTopic(e.target.value)}
-                  placeholder="Ví dụ: Tin học lớp 4 - Lập trình Scratch và robot"
-                  className="w-full px-3 py-2.5 rounded-xl border border-purple-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-300"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAiModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  disabled={isGeneratingAi}
-                  onClick={handleGenerateAiPpct}
-                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-md shadow-purple-600/20 cursor-pointer disabled:opacity-50"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>{isGeneratingAi ? 'AI đang suy nghĩ...' : 'Tạo PPCT ngay'}</span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}

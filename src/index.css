@@ -114,6 +114,54 @@ body {
   border-radius: 4px;
 }
 
+/* A4 Paper Container Styling */
+.a4-paper-frame {
+  width: 100%;
+  max-width: 210mm; /* Standard A4 width */
+  min-height: 297mm; /* Standard A4 height */
+  margin: 0 auto;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.12), 0 0 2px 1px rgba(0, 0, 0, 0.05);
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  position: relative;
+  transition: all 0.2s ease-in-out;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 10mm 12mm;
+  }
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print, .print\:hidden {
+    display: none !important;
+  }
+  .a4-paper-frame {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: auto !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+}
+
 /* 3D Seating mode */
 .seating-3d-perspective {
   perspective: 950px;

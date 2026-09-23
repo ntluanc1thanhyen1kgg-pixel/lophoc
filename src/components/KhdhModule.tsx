@@ -11,6 +11,7 @@ import {
   defaultPpctList,
   defaultTimetable
 } from '../data/defaultData';
+import { saveKhdhDataToFirestore, loadKhdhDataFromFirestore, getSavedSessionUser } from '../services/dbService';
 
 const STORAGE_KEYS = {
   CONFIG: 'khdh_school_config_v1',
@@ -30,10 +31,10 @@ export const KhdhModule: React.FC = () => {
         if (parsed.documentTitle === 'KẾ HOẠCH DẠY HỌC (LỊCH BÁO GIẢNG)') {
           parsed.documentTitle = 'KẾ HOẠCH DẠY HỌC';
         }
-        if (parsed.departmentName === 'PHÒNG GIÁO DỤC VÀ ĐÀO TẠO U MINH THƯỢNG') {
+        if (parsed.departmentName === 'TRƯỜNG TIỂU HỌC THẠNH YÊN 1') {
           parsed.departmentName = 'TỔ CHUYÊN MÔN 4+5';
         }
-        if (parsed.location === 'Thạnh Yên') {
+        if (parsed.location === 'Vĩnh Hòa') {
           parsed.location = 'Vĩnh Hòa';
         }
         if (parsed.principalTitle === 'HIỆU TRƯỞNG') {
@@ -116,30 +117,35 @@ export const KhdhModule: React.FC = () => {
     } catch {}
   }, [activeTab]);
 
-  // Save to localStorage
+  // Load from Firestore on initial mount
+  useEffect(() => {
+    async function loadFromCloud() {
+      const currentUser = getSavedSessionUser();
+      const userId = currentUser?.id || 'shared';
+      const cloudData = await loadKhdhDataFromFirestore(userId);
+      if (cloudData) {
+        if (cloudData.config) setConfig(cloudData.config);
+        if (cloudData.ppctList) setPpctList(cloudData.ppctList);
+        if (cloudData.timetable) setTimetable(cloudData.timetable);
+        if (cloudData.customizedWeeks) setCustomizedWeeks(cloudData.customizedWeeks);
+      }
+    }
+    loadFromCloud();
+  }, []);
+
+  // Save to localStorage & Firestore
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(config));
+      const currentUser = getSavedSessionUser();
+      saveKhdhDataToFirestore(currentUser?.id || 'shared', {
+        config,
+        ppctList,
+        timetable,
+        customizedWeeks
+      });
     } catch {}
-  }, [config]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.PPCT, JSON.stringify(ppctList));
-    } catch {}
-  }, [ppctList]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.TIMETABLE, JSON.stringify(timetable));
-    } catch {}
-  }, [timetable]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.CUSTOMIZED_WEEKS, JSON.stringify(customizedWeeks));
-    } catch {}
-  }, [customizedWeeks]);
+  }, [config, ppctList, timetable, customizedWeeks]);
 
   const handleTabChange = (tab: KhdhTabId) => {
     setActiveTab(tab);
@@ -181,7 +187,7 @@ export const KhdhModule: React.FC = () => {
         activeTab={activeTab}
         onTabChange={handleTabChange}
         title={config.documentTitle || 'KẾ HOẠCH DẠY HỌC'}
-        academicYear={config.academicYear || '2024 - 2025'}
+        academicYear={config.academicYear || '2026 - 2027'}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">

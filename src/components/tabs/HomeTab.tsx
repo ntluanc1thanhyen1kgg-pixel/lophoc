@@ -392,7 +392,9 @@ export const HomeTab: React.FC<HomeTabProps> = ({ state, onNavigate, onUpdateSta
 
           <div className="space-y-3">
             {sortedStudents.slice(0, 7).map((student, idx) => {
-              const pct = Math.max(8, Math.round(((student.coins || 0) / maxCoins) * 100));
+              const safeMax = Math.max(1, maxCoins || 0);
+              const rawPct = Math.round(((student.coins || 0) / safeMax) * 100);
+              const pct = isNaN(rawPct) ? 8 : Math.max(8, Math.min(100, rawPct));
               return (
                 <div key={student.id} className="flex items-center gap-3">
                   <div className="w-5 text-xs font-bold text-slate-400 text-center">{idx + 1}</div>

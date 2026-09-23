@@ -125,8 +125,8 @@ export const LessonDetailModal: React.FC<LessonDetailModalProps> = ({
                 type="number"
                 min={1}
                 max={5}
-                value={formData.period}
-                onChange={(e) => setFormData({ ...formData, period: Number(e.target.value) })}
+                value={isNaN(formData.period) ? 1 : formData.period}
+                onChange={(e) => setFormData({ ...formData, period: parseInt(e.target.value, 10) || 1 })}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
                 required
               />

@@ -298,3 +298,61 @@ export interface KhdhDataState {
   customizedWeeks: Record<number, LessonPlanRow[]>;
 }
 
+// ==========================================
+// SOẠN GIÁO ÁN / KẾ HOẠCH BÀI DẠY CHI TIẾT
+// ==========================================
+
+export interface LessonTaskStep {
+  stepNumber: number; // 1 -> 4
+  stepName: string; // "Bước 1: Chuyển giao nhiệm vụ", "Bước 2: Thực hiện nhiệm vụ", "Bước 3: Báo cáo kết quả", "Bước 4: Đánh giá, kết luận"
+  teacherAction: string; // Hoạt động của Giáo viên (lệnh, câu hỏi, hướng dẫn chi tiết)
+  studentAction: string; // Hoạt động của Học sinh (thao tác, lời thoại, câu trả lời)
+}
+
+export interface LessonTask {
+  taskId: string;
+  taskTitle: string; // "* Nhiệm vụ 1: [Tên nhiệm vụ]" (in nghiêng)
+  steps: LessonTaskStep[];
+}
+
+export interface LessonActivity {
+  activityNumber: number; // 1 -> 4
+  activityName: string; // "1. Khởi động (khoảng 5 phút)", "2. Hình thành kiến thức mới (khoảng 15 phút)", "3. Luyện tập, thực hành (khoảng 10 phút)", "4. Vận dụng, trải nghiệm (khoảng 5 phút)"
+  timeEstimate?: string;
+  tasks: LessonTask[];
+}
+
+export interface PeriodPlan {
+  periodIndex: number; // 1, 2, 3...
+  header: {
+    subject: string;
+    grade: number | string;
+    title: string; // vd: "Bài 1. Thông tin và quy định (2 tiết) ; Tiết 1"
+    timeRange?: string; // vd: ".../.../.... đến .../.../...."
+  };
+  objectives: {
+    specificCompetencies: string[]; // 1. Năng lực đặc thù
+    generalCompetencies: string[]; // 2. Năng lực chung
+    qualities: string[]; // 3. Phẩm chất
+    integrationContent?: string[]; // 4. Nội dung tích hợp (NLS CV 3456, STEM CV 909, Công dân số CV 3899)
+  };
+  teachingTools: {
+    teacher: string[];
+    student: string[];
+  };
+  activities: LessonActivity[]; // Đúng 4 hoạt động
+  postLessonAdjustment?: string; // IV. Điều chỉnh sau bài dạy
+}
+
+export interface DetailedLessonPlan {
+  id: string;
+  topic: string;
+  subject: string;
+  grade: number | string;
+  totalPeriods: number;
+  bookSeries?: string;
+  createdAt: string;
+  periodPlans: PeriodPlan[];
+}
+
+
