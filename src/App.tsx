@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Folder } from 'lucide-react';
 import { AppState, UserAccount } from './types';
 import {
   loadStoredState,
@@ -39,6 +40,7 @@ import { LinksTab } from './components/tabs/LinksTab';
 import { StatsTab } from './components/tabs/StatsTab';
 import { DataTab } from './components/tabs/DataTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
+import { KhdhModule } from './components/KhdhModule';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => getSavedSessionUser());
@@ -310,6 +312,11 @@ export default function App() {
           title: 'Cài Đặt Hệ Thống & Giáo Viên',
           subtitle: 'Cập nhật hồ sơ giảng dạy cá nhân và danh mục môn học'
         };
+      case 'khdh':
+        return {
+          title: 'Kế Hoạch Dạy Học (KHDH)',
+          subtitle: 'Quản lý kế hoạch dạy học, phân phối chương trình, thời khóa biểu & xuất file Word'
+        };
       default:
         return {
           title: 'Lớp Học Thông Minh',
@@ -474,6 +481,8 @@ export default function App() {
               onUpdateState={handleUpdateState}
             />
           )}
+
+          {state.currentPage === 'khdh' && <KhdhModule />}
         </main>
       </div>
 

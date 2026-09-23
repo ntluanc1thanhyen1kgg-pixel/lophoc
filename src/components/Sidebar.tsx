@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Home,
   School,
@@ -18,7 +18,11 @@ import {
   BookOpen,
   ShieldCheck,
   LogOut,
-  X
+  X,
+  Folder,
+  FolderOpen,
+  FileText,
+  Calendar
 } from 'lucide-react';
 import { UserAccount } from '../types';
 import { Avatar } from './Avatar';
@@ -50,7 +54,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateLogo
 }) => {
   const isAdmin = currentUser?.role === 'admin';
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Thư mục hiện tại được xác định trực tiếp theo trang đang mở
+  const activeFolder = currentPage === 'khdh' ? 'khdh' : 'classroom';
+
+  const [khdhTab, setKhdhTab] = useState<string>(() => {
+    try {
+      return localStorage.getItem('khdh_active_tab_v1') || 'document';
+    } catch {
+      return 'document';
+    }
+  });
+
+  useEffect(() => {
+    const handleTabUpdated = (e: any) => {
+      if (e.detail) setKhdhTab(e.detail);
+    };
+    window.addEventListener('khdh_tab_updated', handleTabUpdated);
+    return () => window.removeEventListener('khdh_tab_updated', handleTabUpdated);
+  }, []);
+
+  const khdhItems = [
+    { id: 'document', label: 'Kế hoạch dạy học', icon: FileText },
+    { id: 'ppct', label: 'Phân phối CT', icon: BookOpen },
+    { id: 'tkb', label: 'Thời khóa biểu', icon: Calendar },
+    { id: 'ai', label: 'Trợ lý AI Gemini', icon: Sparkles, badge: 'AI' },
+    { id: 'settings', label: 'Cấu hình văn bản', icon: Settings }
+  ];
+
+  const handleSelectClassroomFolder = () => {
+    if (currentPage === 'khdh') {
+      onNavigate('home');
+    }
+  };
+
+  const handleSelectKhdhFolder = () => {
+    onNavigate('khdh');
+    onClose();
+  };
+
+  const handleSelectKhdhItem = (tabId: string) => {
+    setKhdhTab(tabId);
+    try {
+      localStorage.setItem('khdh_active_tab_v1', tabId);
+      window.dispatchEvent(new CustomEvent('khdh_change_tab', { detail: tabId }));
+    } catch {}
+    onNavigate('khdh');
+    onClose();
+  };
 
   const handleLogoClick = () => {
     if (isAdmin && fileInputRef.current) {
@@ -113,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         <div>
           {/* Brand header */}
-          <div className="flex items-center justify-between pb-3.5 mb-2 border-b border-slate-100">
+          <div className="flex items-center justify-between pb-3 mb-2.5 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
               <div 
                 onClick={handleLogoClick}
@@ -151,45 +203,152 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
 
-          {/* Navigation links */}
-          <nav className="space-y-0.5 mt-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = currentPage === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    onNavigate(item.id);
-                    onClose();
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl font-bold text-[13.5px] transition-all text-left ${
-                    isActive
-                      ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-md shadow-teal-600/25'
-                      : 'text-slate-700 hover:bg-teal-50/80 hover:text-teal-800 hover:translate-x-0.5'
+          {/* Danh sách các thư mục sắp xếp theo HÀNG DỌC */}
+          <div className="space-y-1.5 mt-1 mb-2.5">
+            {/* 1. Thư mục QUẢN LÝ LỚP HỌC */}
+            <button
+              type="button"
+              onClick={handleSelectClassroomFolder}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl transition-all text-left cursor-pointer border ${
+                activeFolder === 'classroom'
+                  ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white border-teal-600 shadow-md shadow-teal-600/20 font-black'
+                  : 'bg-white hover:bg-teal-50/80 text-slate-700 border-slate-200/90 font-bold hover:border-teal-200'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <FolderOpen
+                  className={`w-4 h-4 shrink-0 ${
+                    activeFolder === 'classroom' ? 'text-white' : 'text-teal-600'
                   }`}
-                >
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  <span className="flex-1 truncate">{item.label}</span>
-                  {item.badge && (
-                    <span
-                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                />
+                <span className="text-[13px] tracking-tight truncate">Quản lý lớp học</span>
+              </div>
+              <span
+                className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
+                  activeFolder === 'classroom'
+                    ? 'bg-white/25 text-white'
+                    : 'bg-teal-100 text-teal-800'
+                }`}
+              >
+                {navItems.length}
+              </span>
+            </button>
+
+            {/* 2. Thư mục KHDH xếp theo HÀNG DỌC ngay bên dưới (không thêm bất kỳ gì vào KHDH) */}
+            <button
+              type="button"
+              onClick={handleSelectKhdhFolder}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl transition-all text-left cursor-pointer border ${
+                activeFolder === 'khdh'
+                  ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white border-teal-600 shadow-md shadow-teal-600/20 font-black'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/90 font-bold hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Folder
+                  className={`w-4 h-4 shrink-0 ${
+                    activeFolder === 'khdh' ? 'text-white' : 'text-slate-500'
+                  }`}
+                />
+                <span className="text-[13px] tracking-tight truncate">KHDH</span>
+              </div>
+              <span
+                className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                  activeFolder === 'khdh'
+                    ? 'bg-white/25 text-white'
+                    : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                {khdhItems.length} mục
+              </span>
+            </button>
+          </div>
+
+          {/* Nội dung nạp vào theo thư mục đang chọn (lập tức load, không mở rộng accordion) */}
+          {activeFolder === 'classroom' ? (
+            <div className="space-y-1 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between px-2 py-0.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                <span>Tác vụ lớp học</span>
+                <span>{navItems.length} mục</span>
+              </div>
+              <nav className="space-y-0.5">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = currentPage === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        onNavigate(item.id);
+                        onClose();
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl font-bold text-[13px] transition-all text-left cursor-pointer ${
                         isActive
-                          ? 'bg-white/25 text-white'
-                          : item.badge === 'HOT'
-                          ? 'bg-rose-100 text-rose-600'
-                          : item.badge === 'NEW'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-teal-100 text-teal-700'
+                          ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-md shadow-teal-600/25'
+                          : 'text-slate-700 hover:bg-teal-50/80 hover:text-teal-800 hover:translate-x-0.5'
                       }`}
                     >
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {item.badge && (
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            isActive
+                              ? 'bg-white/25 text-white'
+                              : item.badge === 'HOT'
+                              ? 'bg-rose-100 text-rose-600'
+                              : item.badge === 'NEW'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-teal-100 text-teal-700'
+                          }`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+          ) : (
+            <div className="space-y-1 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between px-2 py-0.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                <span>Kế hoạch dạy học</span>
+                <span>{khdhItems.length} mục</span>
+              </div>
+              <nav className="space-y-0.5">
+                {khdhItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = currentPage === 'khdh' && khdhTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSelectKhdhItem(item.id)}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl font-bold text-[13px] transition-all text-left cursor-pointer ${
+                        isActive
+                          ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-md shadow-teal-600/25'
+                          : 'text-slate-700 hover:bg-teal-50/80 hover:text-teal-800 hover:translate-x-0.5'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {item.badge && (
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            isActive
+                              ? 'bg-white/25 text-white'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+          )}
         </div>
 
         {/* Bottom actions & User Profile */}
@@ -246,3 +405,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+

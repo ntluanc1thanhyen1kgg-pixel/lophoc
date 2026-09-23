@@ -227,3 +227,74 @@ export const WHEEL_EFFECTS = [
   'Sân khấu ánh sáng',
   'Sóng bồng bềnh'
 ];
+
+// ==========================================
+// KẾ HOẠCH DẠY HỌC (KHDH) / LỊCH BÁO GIẢNG
+// ==========================================
+
+export interface PpctItem {
+  id: string;
+  grade: number | string; // Khối lớp (3, 4, 5...)
+  subject: string; // Tên môn học (Tin học, Công nghệ...)
+  week: number; // Tuần (1 -> 35)
+  periodIndex: number; // Tiết theo PPCT
+  lessonName: string; // Tên bài dạy
+  integrationNote?: string; // Tích hợp (STEM, GDQP, Chuyển đổi số...)
+  notes?: string; // Ghi chú thêm
+}
+
+export interface TimetableSlot {
+  id: string;
+  dayOfWeek: number; // 2: Thứ Hai, 3: Thứ Ba, ..., 6: Thứ Sáu, 7: Thứ Bảy
+  session: 'morning' | 'afternoon' | string; // 'morning' (Sáng) hoặc 'afternoon' (Chiều)
+  period: number; // Tiết 1 -> 5
+  className: string; // Lớp (3A1, 4A2...)
+  subject: string; // Môn học (Tin học, Công nghệ...)
+  grade: number | string; // Khối lớp
+}
+
+export interface SchoolConfig {
+  schoolName: string;
+  departmentName: string;
+  republicTitleTop: string;
+  republicTitleSub: string;
+  documentTitle: string;
+  subjectTitle: string;
+  academicYear: string;
+  startDateWeek1: string; // YYYY-MM-DD (Thứ Hai tuần 1)
+  location: string;
+  principalTitle: string;
+  principalName: string;
+  headTeacherTitle: string;
+  headTeacherName: string;
+  teacherTitle: string;
+  teacherName: string;
+}
+
+export interface LessonPlanRow {
+  id: string;
+  dayOfWeek: number; // 2 -> 7
+  dateStr: string; // DD/MM/YYYY
+  session: string; // 'Sáng' | 'Chiều'
+  period: number; // 1 -> 5
+  className: string;
+  subject: string;
+  lessonName: string;
+  integrationNote?: string;
+  isCustomized?: boolean;
+}
+
+export interface LessonPlanWeek {
+  weekNumber: number;
+  startDate: string; // DD/MM/YYYY
+  endDate: string; // DD/MM/YYYY
+  rows: LessonPlanRow[];
+}
+
+export interface KhdhDataState {
+  config: SchoolConfig;
+  ppctList: PpctItem[];
+  timetable: TimetableSlot[];
+  customizedWeeks: Record<number, LessonPlanRow[]>;
+}
+
