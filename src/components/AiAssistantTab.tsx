@@ -23,9 +23,14 @@ import {
   ShieldCheck,
   RefreshCw
 } from 'lucide-react';
-import { DetailedLessonPlan, PeriodPlan, SchoolConfig } from '../types';
+import { DetailedLessonPlan, PeriodPlan, SchoolConfig, UserAccount } from '../types';
 import { exportDetailedLessonPlanToDocx } from '../utils/docxExport';
 import { defaultSchoolConfig } from '../data/defaultData';
+import {
+  loadLessonPlansFromFirestore,
+  saveLessonPlansToFirestore,
+  getUserKhdhStorageKeys
+} from '../services/dbService';
 
 interface UploadedFileInfo {
   name: string;
@@ -35,12 +40,16 @@ interface UploadedFileInfo {
   previewUrl?: string;
 }
 
-export const AiAssistantTab: React.FC = () => {
-  const [topic, setTopic] = useState<string>('Bài 1. Thông tin và quyết định');
+interface AiAssistantTabProps {
+  currentUser?: UserAccount | null;
+}
+
+export const AiAssistantTab: React.FC<AiAssistantTabProps> = ({ currentUser }) => {
+  const [topic, setTopic] = useState<string>('');
   const [subject, setSubject] = useState<string>('Tin học');
   const [grade, setGrade] = useState<string>('3');
   const [totalPeriods, setTotalPeriods] = useState<number>(2);
-  const [bookSeries, setBookSeries] = useState<string>('Kết nối tri thức với cuộc sống');
+  const [bookSeries, setBookSeries] = useState<string>('GDPT 2018');
   const [enableNls, setEnableNls] = useState<boolean>(true);
   const [enableStem, setEnableStem] = useState<boolean>(true);
   const [enableCds, setEnableCds] = useState<boolean>(true);
@@ -58,8 +67,8 @@ export const AiAssistantTab: React.FC = () => {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [testStatus, setTestStatus] = useState<{ loading: boolean; success?: boolean; message?: string } | null>(null);
 
-  // File Upload State (Image & PDF)
-  const [uploadedFile, setUploadedFile] = useState<UploadedFileInfo | null>(null);
+  // File Upload State (Multiple Images & PDFs)
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFileInfo[]>([]);
   const [isAnalyzingFile, setIsAnalyzingFile] = useState<boolean>(false);
   const [fileAnalysisNote, setFileAnalysisNote] = useState<string | null>(null);
   const [topicError, setTopicError] = useState<string | null>(null);
@@ -73,23 +82,49 @@ export const AiAssistantTab: React.FC = () => {
   const [savedPlans, setSavedPlans] = useState<DetailedLessonPlan[]>([]);
   const [schoolConfig, setSchoolConfig] = useState<SchoolConfig>(defaultSchoolConfig);
 
-  // Load saved plans from localStorage
+  // Load saved plans from Firestore and user-isolated localStorage
   useEffect(() => {
+    const userId = currentUser?.id || 'guest';
+    const keys = getUserKhdhStorageKeys(currentUser?.id);
+
+    // 1. First load from local storage cache for instant UI
     try {
-      const saved = localStorage.getItem('khdh_saved_lesson_plans_v1');
+      const saved = localStorage.getItem(keys.SAVED_PLANS) || localStorage.getItem('khdh_saved_lesson_plans_v1');
       if (saved) {
         setSavedPlans(JSON.parse(saved));
+      } else {
+        setSavedPlans([]);
       }
-      const savedConfig = localStorage.getItem('khdh_school_config_v1');
+      const savedConfig = localStorage.getItem(keys.CONFIG) || localStorage.getItem('khdh_school_config_v1');
       if (savedConfig) {
         setSchoolConfig(JSON.parse(savedConfig));
       }
     } catch (e) {
-      console.error('Error reading localStorage:', e);
+      console.error('Error reading localStorage for lesson plans:', e);
     }
-  }, []);
 
-  const handleSaveToLibrary = (planToSave: DetailedLessonPlan) => {
+    // 2. Fetch latest saved plans from Firestore for this specific logged-in user
+    let active = true;
+    async function fetchUserPlans() {
+      if (!currentUser?.id) return;
+      try {
+        const cloudPlans = await loadLessonPlansFromFirestore(currentUser.id);
+        if (cloudPlans && active) {
+          setSavedPlans(cloudPlans);
+          localStorage.setItem(keys.SAVED_PLANS, JSON.stringify(cloudPlans));
+        }
+      } catch (err) {
+        console.warn('Error fetching cloud lesson plans:', err);
+      }
+    }
+    fetchUserPlans();
+
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.id]);
+
+  const handleSaveToLibrary = async (planToSave: DetailedLessonPlan) => {
     try {
       const exists = savedPlans.some((p) => p.id === planToSave.id);
       let updated: DetailedLessonPlan[];
@@ -99,8 +134,14 @@ export const AiAssistantTab: React.FC = () => {
         updated = [planToSave, ...savedPlans];
       }
       setSavedPlans(updated);
-      localStorage.setItem('khdh_saved_lesson_plans_v1', JSON.stringify(updated));
-      alert('Đã lưu giáo án vào Thư viện bài dạy thành công!');
+      
+      const keys = getUserKhdhStorageKeys(currentUser?.id);
+      localStorage.setItem(keys.SAVED_PLANS, JSON.stringify(updated));
+
+      // Persist to user's Firestore cloud account
+      const userId = currentUser?.id || 'shared';
+      await saveLessonPlansToFirestore(userId, updated);
+      alert('Đã lưu giáo án vào tài khoản của Thầy/Cô thành công!');
     } catch (e) {
       console.error('Error saving plan:', e);
     }
@@ -173,127 +214,175 @@ export const AiAssistantTab: React.FC = () => {
     }
   };
 
-  const handleDeleteSavedPlan = (id: string) => {
+  const handleDeleteSavedPlan = async (id: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa giáo án này khỏi thư viện?')) {
       const updated = savedPlans.filter((p) => p.id !== id);
       setSavedPlans(updated);
-      localStorage.setItem('khdh_saved_lesson_plans_v1', JSON.stringify(updated));
+      const keys = getUserKhdhStorageKeys(currentUser?.id);
+      localStorage.setItem(keys.SAVED_PLANS, JSON.stringify(updated));
+      const userId = currentUser?.id || 'shared';
+      await saveLessonPlansToFirestore(userId, updated);
+      if (currentPlan?.id === id) {
+        setCurrentPlan(null);
+      }
     }
   };
 
-  // Handle File Upload (Image or PDF)
+  const handleClearAllSavedPlans = async () => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa TOÀN BỘ các bài giáo án trong thư viện của tài khoản?')) {
+      setSavedPlans([]);
+      setCurrentPlan(null);
+      const keys = getUserKhdhStorageKeys(currentUser?.id);
+      localStorage.removeItem(keys.SAVED_PLANS);
+      localStorage.removeItem('khdh_saved_lesson_plans_v1');
+      const userId = currentUser?.id || 'shared';
+      await saveLessonPlansToFirestore(userId, []);
+    }
+  };
+
+  // Handle File Upload (Multiple Images or PDFs)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    const isImage = file.type.startsWith('image/');
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const fileList = Array.from(files) as File[];
+    const validFiles: File[] = [];
 
-    if (!isImage && !isPdf) {
-      alert('Vui lòng chọn tệp hình ảnh (.jpg, .png, .webp) hoặc tệp PDF (.pdf)!');
-      return;
+    for (const f of fileList) {
+      const isImage = f.type.startsWith('image/');
+      const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+
+      if (!isImage && !isPdf) {
+        alert(`Tệp "${f.name}" không hợp lệ. Vui lòng chọn hình ảnh hoặc tệp PDF!`);
+        continue;
+      }
+
+      if (f.size > 20 * 1024 * 1024) {
+        alert(`Tệp "${f.name}" vượt quá 20MB!`);
+        continue;
+      }
+
+      validFiles.push(f);
     }
 
-    // Limit to 20MB
-    if (file.size > 20 * 1024 * 1024) {
-      alert('Kích thước tệp quá lớn. Vui lòng chọn tệp dưới 20MB.');
-      return;
-    }
+    if (validFiles.length === 0) return;
 
     setTopicError(null);
-    const reader = new FileReader();
 
-    reader.onload = async () => {
-      const base64Data = reader.result as string;
-      const fileInfo: UploadedFileInfo = {
-        name: file.name,
-        size: file.size,
-        type: file.type || (isPdf ? 'application/pdf' : 'image/jpeg'),
-        base64: base64Data,
-        previewUrl: isImage ? base64Data : undefined
-      };
+    // Read all valid files asynchronously
+    const newUploadedInfos: UploadedFileInfo[] = await Promise.all(
+      validFiles.map(
+        (f) =>
+          new Promise<UploadedFileInfo>((resolve) => {
+            const isImage = f.type.startsWith('image/');
+            const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+            const reader = new FileReader();
 
-      setUploadedFile(fileInfo);
+            reader.onload = () => {
+              const base64Data = reader.result as string;
+              resolve({
+                name: f.name,
+                size: f.size,
+                type: f.type || (isPdf ? 'application/pdf' : 'image/jpeg'),
+                base64: base64Data,
+                previewUrl: isImage ? base64Data : undefined
+              });
+            };
 
-      if (isImage) {
-        // Đối với hình ảnh: Hệ thống tự động nhận dạng tên bài học
-        setIsAnalyzingFile(true);
-        setFileAnalysisNote('Đang tự động nhận dạng tên bài học từ hình ảnh...');
+            reader.readAsDataURL(f);
+          })
+      )
+    );
 
-        try {
-          const response = await fetch('/api/gemini/analyze-lesson-file', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-gemini-api-key': customApiKey || ''
-            },
-            body: JSON.stringify({
-              base64Data,
-              mimeType: file.type || 'image/jpeg',
-              fileName: file.name,
-              customApiKey: customApiKey || undefined
-            })
-          });
+    const updatedFiles = [...uploadedFiles, ...newUploadedInfos];
+    setUploadedFiles(updatedFiles);
 
-          if (response.ok) {
-            const data = await response.json();
-            if (data.topic) {
-              setTopic(data.topic);
-            }
-            if (data.subject) {
-              setSubject(data.subject);
-            }
-            if (data.grade) {
-              setGrade(data.grade.toString());
-            }
-            if (data.bookSeries) {
-              setBookSeries(data.bookSeries);
-            }
-            setFileAnalysisNote(`✨ Đã tự động nhận dạng thành công: "${data.topic || file.name}"`);
-          } else {
-            // Fallback: Use clean file name
-            const cleanedFileName = file.name
-              .replace(/\.[^/.]+$/, '')
-              .replace(/[-_]/g, ' ')
-              .trim();
-            const guessedTopic = cleanedFileName.startsWith('Bài')
-              ? cleanedFileName
-              : `Bài học: ${cleanedFileName}`;
-            setTopic(guessedTopic);
-            setFileAnalysisNote(`✨ Đã nhận dạng tên bài học từ tệp: "${guessedTopic}"`);
-          }
-        } catch (err) {
-          console.warn('Error analyzing image file:', err);
-          const cleanedFileName = file.name
-            .replace(/\.[^/.]+$/, '')
-            .replace(/[-_]/g, ' ')
-            .trim();
-          const guessedTopic = cleanedFileName.startsWith('Bài')
-            ? cleanedFileName
-            : `Bài học: ${cleanedFileName}`;
-          setTopic(guessedTopic);
-          setFileAnalysisNote(`✨ Đã nhận dạng tên bài học từ tệp: "${guessedTopic}"`);
-        } finally {
-          setIsAnalyzingFile(false);
-        }
-      } else if (isPdf) {
-        // Đối với file PDF: Bắt buộc người dùng nhập tên bài học
-        setFileAnalysisNote('⚠️ Đối với file PDF: Bắt buộc người dùng nhập tên bài học bên dưới.');
-        // Nếu tên bài học đang là mặc định hoặc rỗng, nhắc người dùng nhập
-        if (topic === 'Bài 1. Thông tin và quyết định') {
-          setTopic('');
-        }
-        setTimeout(() => {
-          topicInputRef.current?.focus();
-        }, 100);
+    // Trigger AI analysis on newly uploaded image files
+    const hasImages = updatedFiles.some((f) => f.type.startsWith('image/'));
+    const hasPdfsOnly = updatedFiles.every((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+
+    if (hasImages) {
+      setIsAnalyzingFile(true);
+      setFileAnalysisNote(`Đang phân tích ${updatedFiles.length} tệp hình ảnh/tài liệu...`);
+
+      // Pre-fill instant fallback topic from image filename so input is never empty
+      const firstImg = updatedFiles.find((f) => f.type.startsWith('image/')) || updatedFiles[0];
+      if (firstImg) {
+        const cleanedName = firstImg.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').trim();
+        const guessed = cleanedName.startsWith('Bài') ? cleanedName : `Bài: ${cleanedName}`;
+        setTopic(guessed);
       }
-    };
 
-    reader.readAsDataURL(file);
+      try {
+        const response = await fetch('/api/gemini/analyze-lesson-file', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-gemini-api-key': customApiKey || ''
+          },
+          body: JSON.stringify({
+            attachedFiles: updatedFiles.map((f) => ({
+              base64Data: f.base64,
+              mimeType: f.type,
+              fileName: f.name
+            })),
+            customApiKey: customApiKey || undefined
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.topic) setTopic(data.topic);
+          if (data.subject) setSubject(data.subject);
+          if (data.grade) setGrade(data.grade.toString());
+          if (data.bookSeries) setBookSeries(data.bookSeries);
+          setFileAnalysisNote(
+            `✨ Đã phân tích thành công ${updatedFiles.length} hình ảnh: "${data.topic || updatedFiles[0].name}"`
+          );
+        } else {
+          const firstImage = updatedFiles.find((f) => f.type.startsWith('image/')) || updatedFiles[0];
+          const cleanedName = firstImage.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').trim();
+          const guessed = cleanedName.startsWith('Bài') ? cleanedName : `Bài học: ${cleanedName}`;
+          setTopic(guessed);
+          setFileAnalysisNote(`✨ Đã nhận diện tên bài học từ ${updatedFiles.length} tệp hình ảnh.`);
+        }
+      } catch (err) {
+        console.warn('Error analyzing image files:', err);
+        const firstImage = updatedFiles.find((f) => f.type.startsWith('image/')) || updatedFiles[0];
+        const cleanedName = firstImage.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').trim();
+        const guessed = cleanedName.startsWith('Bài') ? cleanedName : `Bài học: ${cleanedName}`;
+        setTopic(guessed);
+        setFileAnalysisNote(`✨ Đã nhận diện tên bài học từ ${updatedFiles.length} tệp hình ảnh.`);
+      } finally {
+        setIsAnalyzingFile(false);
+      }
+    } else if (hasPdfsOnly) {
+      setFileAnalysisNote('⚠️ Bắt buộc nhập tên bài học khi sử dụng tệp PDF.');
+      if (topic === 'Bài 1. Thông tin và quyết định') {
+        setTopic('');
+      }
+      setTimeout(() => {
+        topicInputRef.current?.focus();
+      }, 100);
+    }
   };
 
-  const handleRemoveFile = () => {
-    setUploadedFile(null);
+  const handleRemoveSingleFile = (indexToRemove: number) => {
+    const updated = uploadedFiles.filter((_, idx) => idx !== indexToRemove);
+    setUploadedFiles(updated);
+    if (updated.length === 0) {
+      setFileAnalysisNote(null);
+      setTopicError(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } else {
+      setFileAnalysisNote(`Đã chọn ${updated.length} tệp hình ảnh/trang sách.`);
+    }
+  };
+
+  const handleClearAllFiles = () => {
+    setUploadedFiles([]);
     setFileAnalysisNote(null);
     setTopicError(null);
     if (fileInputRef.current) {
@@ -326,7 +415,7 @@ export const AiAssistantTab: React.FC = () => {
       const specificComp = isPeriod1
         ? [
             `Nhận biết và nêu được các khái niệm, biểu hiện cơ bản liên quan đến ${cleanTopic}.`,
-            `Nêu được ví dụ minh họa và thực hiện các thao tác quan sát, tìm hiểu theo yêu cầu bài học trong SGK${attachment ? ` (bám sát tài liệu ${attachment.name})` : ''}.`
+            `Nêu được ví dụ minh họa và thực hiện các thao tác quan sát, tìm hiểu theo yêu cầu bài học trong SGK (Hình 1, Hình 2 trang 8).`
           ]
         : [
             `Vận dụng kiến thức bài học để giải quyết bài tập và tình huống thực hành nâng cao.`,
@@ -401,20 +490,20 @@ export const AiAssistantTab: React.FC = () => {
                 {
                   stepNumber: 1,
                   stepName: 'Bước 1: Chuyển giao nhiệm vụ',
-                  teacherAction: `GV yêu cầu học sinh làm việc theo cặp đôi, đọc thông tin và quan sát hình ảnh trong SGK mục ${isPeriod1 ? '1' : '3'}${attachment ? ` (Tài liệu: ${attachment.name})` : ''}.`,
-                  studentAction: `HS mở SGK, cùng bạn cùng bàn đọc thầm thông tin và quan sát các chi tiết trong hình.`
+                  teacherAction: `GV yêu cầu học sinh mở SGK trang 8, làm việc theo cặp đôi: đọc kỹ văn bản hướng dẫn và quan sát chi tiết Hình 1, Hình 2 trong SGK mục ${isPeriod1 ? '1' : '3'}. GV diễn giải rõ yêu cầu: 'Các em hãy chú ý quan sát màu sắc, hình dáng và các ký hiệu được đánh số trong sơ đồ để chuẩn bị trả lời câu hỏi khám phá.'`,
+                  studentAction: `HS mở SGK trang 8, cùng bạn ngồi bên cạnh đọc thầm nội dung bài học, tập trung quan sát từng chi tiết trên Hình 1, Hình 2 và trao đổi nhẹ nhàng với bạn.`
                 },
                 {
                   stepNumber: 2,
                   stepName: 'Bước 2: Thực hiện nhiệm vụ',
-                  teacherAction: `GV đặt câu hỏi gợi mở: 'Qua quan sát, em hãy chỉ ra điểm giống và khác nhau?' GV bao quát lớp và hỗ trợ các nhóm.`,
-                  studentAction: `HS thảo luận sôi nổi: [1.3.${nlsLevel}a: HS tra cứu và chỉ ra thông tin tương ứng trên màn hình tương tác].`
+                  teacherAction: `GV đặt câu hỏi gợi mở tỉ mỉ: 'Qua quan sát Hình 1 và Hình 2, em hãy cho biết điểm giống và khác nhau giữa các thành phần? Điều này giúp ích gì cho bài học?' GV diễn giải ví dụ minh họa thực tế để các em dễ hình dung, sau đó bao quát lớp và gợi ý cho các nhóm còn lúng túng.`,
+                  studentAction: `HS thảo luận sôi nổi theo cặp: HS1 chỉ ra các chi tiết quan sát được, HS2 lắng nghe và diễn giải bổ sung lý do (Ví dụ: 'Tớ thấy ở Hình 1 thể hiện... vì...'). [1.3.${nlsLevel}a: HS tra cứu và chỉ ra thông tin tương ứng trên thiết bị học tập].`
                 },
                 {
                   stepNumber: 3,
                   stepName: 'Bước 3: Báo cáo kết quả',
-                  teacherAction: `GV mời đại diện 2 nhóm đứng dậy trình bày kết quả thảo luận trước lớp.`,
-                  studentAction: `HS đại diện nhóm phát biểu: 'Thưa thầy/cô, nhóm em nhận thấy...' - Nhóm khác nhận xét, bổ sung.`
+                  teacherAction: `GV mời đại diện 2 nhóm đứng dậy báo cáo kết quả thảo luận trước lớp, yêu cầu trình bày rõ ràng từng bước diễn giải và chỉ vào hình ảnh minh họa trên SGK/bảng lớp.`,
+                  studentAction: `HS đại diện nhóm 1 tự tin đứng dậy phát biểu: 'Thưa thầy/cô, nhóm em xin trình bày: Qua quan sát Hình 1 trang 8 SGK, nhóm em nhận thấy... Lí do là vì...'. Đại diện nhóm 2 lắng nghe, giơ tay nhận xét và bổ sung chi tiết.`
                 },
                 {
                   stepNumber: 4,
@@ -618,9 +707,9 @@ export const AiAssistantTab: React.FC = () => {
     if (e) e.preventDefault();
 
     // RÀNG BUỘC THEO YÊU CẦU: Đối với file PDF thì bắt buộc người dùng nhập tên bài học
-    const isPdf = uploadedFile?.type === 'application/pdf' || uploadedFile?.name.toLowerCase().endsWith('.pdf');
+    const hasPdf = uploadedFiles.some((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
     if (!topic.trim()) {
-      if (isPdf) {
+      if (hasPdf) {
         setTopicError('⚠️ Bắt buộc nhập tên bài học khi sử dụng tệp PDF!');
         topicInputRef.current?.focus();
         alert('Đối với file PDF, bắt buộc người dùng phải nhập Tên bài học trước khi tạo kế hoạch bài dạy!');
@@ -636,6 +725,12 @@ export const AiAssistantTab: React.FC = () => {
 
     try {
       setIsLoading(true);
+
+      const attachedFilesPayload = uploadedFiles.map((f) => ({
+        base64Data: f.base64,
+        mimeType: f.type,
+        fileName: f.name
+      }));
 
       const response = await fetch('/api/gemini/generate-lesson-plan', {
         method: 'POST',
@@ -655,13 +750,8 @@ export const AiAssistantTab: React.FC = () => {
             cds: enableCds
           },
           customApiKey: customApiKey || undefined,
-          attachedFile: uploadedFile
-            ? {
-                base64Data: uploadedFile.base64,
-                mimeType: uploadedFile.type,
-                fileName: uploadedFile.name
-              }
-            : undefined
+          attachedFiles: attachedFilesPayload.length > 0 ? attachedFilesPayload : undefined,
+          attachedFile: attachedFilesPayload[0] || undefined
         })
       });
 
@@ -685,12 +775,12 @@ export const AiAssistantTab: React.FC = () => {
       }
 
       // If server responds without structured plan or server unavailable, use standard fallback generator
-      const fallback = generateFallbackLessonPlan(topic, subject, grade, totalPeriods, bookSeries, uploadedFile);
+      const fallback = generateFallbackLessonPlan(topic, subject, grade, totalPeriods, bookSeries, uploadedFiles[0] || null);
       setCurrentPlan(fallback);
       setSelectedPeriodTab(0);
     } catch (err) {
       console.warn('Using client generator due to API error:', err);
-      const fallback = generateFallbackLessonPlan(topic, subject, grade, totalPeriods, bookSeries, uploadedFile);
+      const fallback = generateFallbackLessonPlan(topic, subject, grade, totalPeriods, bookSeries, uploadedFiles[0] || null);
       setCurrentPlan(fallback);
       setSelectedPeriodTab(0);
     } finally {
@@ -720,7 +810,7 @@ export const AiAssistantTab: React.FC = () => {
       : currentPlan.periodPlans;
 
     let fullText = `KẾ HOẠCH BÀI DẠY (GIÁO ÁN)\n`;
-    fullText += `MÔN: ${currentPlan.subject.toUpperCase()} - LỚP ${currentPlan.grade} (${currentPlan.bookSeries})\n`;
+    fullText += `MÔN: ${currentPlan.subject.toUpperCase()} - LỚP ${currentPlan.grade}\n`;
     fullText += `====================================================\n\n`;
 
     periods.forEach((period) => {
@@ -747,8 +837,11 @@ export const AiAssistantTab: React.FC = () => {
       fullText += `III. CÁC HOẠT ĐỘNG DẠY HỌC CHỦ YẾU:\n`;
       period.activities.forEach((act) => {
         fullText += `\n--- ${act.activityName.toUpperCase()} ---\n`;
+        if (act.integrationNote) {
+          fullText += `✦ Nội dung tích hợp: ${act.integrationNote}\n`;
+        }
         act.tasks?.forEach((task) => {
-          fullText += `${task.taskTitle}\n`;
+          fullText += `${task.taskTitle}${task.integrationNote ? ` [Tích hợp: ${task.integrationNote}]` : ''}\n`;
           task.steps?.forEach((step) => {
             fullText += `+ ${step.stepName}:\n`;
             fullText += `  * Hoạt động của GV: ${step.teacherAction}\n`;
@@ -777,7 +870,7 @@ export const AiAssistantTab: React.FC = () => {
       : currentPlan.periodPlans.filter((p) => p.periodIndex === selectedPeriodTab)
     : [];
 
-  const isPdf = uploadedFile?.type === 'application/pdf' || uploadedFile?.name.toLowerCase().endsWith('.pdf');
+  const isPdf = uploadedFiles.some((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -802,12 +895,38 @@ export const AiAssistantTab: React.FC = () => {
           </div>
         </div>
 
-        {savedPlans.length > 0 && (
-          <div className="flex items-center gap-2 text-xs bg-white/15 px-3 py-2 rounded-xl backdrop-blur-md">
-            <Bookmark className="w-4 h-4 text-amber-300" />
-            <span className="font-bold">Đã lưu: {savedPlans.length} giáo án</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Nút Cài đặt Google Gemini API Key */}
+          <button
+            type="button"
+            onClick={() => {
+              setInputKey(customApiKey);
+              setTestStatus(null);
+              setShowApiKeyModal(true);
+            }}
+            className={`flex items-center gap-2 text-xs font-bold px-3.5 py-2 rounded-xl backdrop-blur-md transition-all border cursor-pointer shadow-md ${
+              customApiKey
+                ? 'bg-emerald-600/90 hover:bg-emerald-600 text-white border-emerald-400/50 shadow-emerald-950/20'
+                : 'bg-white/20 hover:bg-white/30 text-white border-white/30'
+            }`}
+            title="Dán API Key Google để khi đưa lên Vercel soạn giáo án không bị lỗi"
+          >
+            <Key className="w-4 h-4 text-amber-300" />
+            <span>{customApiKey ? 'Đã cài đặt API Key' : 'Dán Gemini API Key'}</span>
+            {customApiKey ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse"></span>
+            ) : (
+              <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-400 text-teal-950">Vercel</span>
+            )}
+          </button>
+
+          {savedPlans.length > 0 && (
+            <div className="flex items-center gap-2 text-xs bg-white/15 px-3 py-2 rounded-xl backdrop-blur-md">
+              <Bookmark className="w-4 h-4 text-amber-300" />
+              <span className="font-bold">Đã lưu: {savedPlans.length} giáo án</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -827,29 +946,30 @@ export const AiAssistantTab: React.FC = () => {
               </span>
             </div>
 
-            {/* TÍNH NĂNG TẢI TỆP LÊN: HÌNH ẢNH & PDF */}
+            {/* TÍNH NĂNG TẢI TỆP LÊN: HỖ TRỢ NHIỀU HÌNH ẢNH & PDF CÙNG LÚC */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
                   <UploadCloud className="w-4 h-4 text-teal-600" />
                   <span>Tải lên trang sách / tài liệu:</span>
                 </label>
-                <span className="text-[10px] text-slate-500 font-semibold">
-                  (Ảnh / PDF)
+                <span className="text-[10px] text-teal-700 font-bold bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                  Nhiều ảnh / PDF
                 </span>
               </div>
 
-              {/* Upload Input Area */}
+              {/* Upload Input Area with multiple attribute */}
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 accept="image/*,application/pdf"
                 onChange={handleFileChange}
                 className="hidden"
                 id="lesson-file-upload"
               />
 
-              {!uploadedFile ? (
+              {uploadedFiles.length === 0 ? (
                 <label
                   htmlFor="lesson-file-upload"
                   className="border-2 border-dashed border-teal-200 hover:border-teal-500 hover:bg-teal-50/50 rounded-2xl p-3.5 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all text-center bg-slate-50/50 group"
@@ -859,63 +979,98 @@ export const AiAssistantTab: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-xs font-bold text-slate-800 group-hover:text-teal-900">
-                      Bấm để chọn tệp <span className="text-teal-600 font-black">Hình ảnh</span> hoặc <span className="text-teal-600 font-black">PDF</span>
+                      Bấm để chọn <span className="text-teal-600 font-black">Nhiều hình ảnh</span> hoặc <span className="text-teal-600 font-black">PDF</span>
                     </p>
                     <p className="text-[10px] text-slate-500 mt-0.5">
-                      📷 Ảnh: Tự nhận diện tên bài | 📄 PDF: Nhập tên bài học
+                      📷 Cho phép tải nhiều trang sách cùng lúc | 📄 Tự động trích xuất nội dung
                     </p>
                   </div>
                 </label>
               ) : (
-                <div className="p-3 rounded-2xl bg-teal-50/70 border border-teal-200 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      {uploadedFile.previewUrl ? (
-                        <img
-                          src={uploadedFile.previewUrl}
-                          alt="Trang sách"
-                          className="w-10 h-10 object-cover rounded-xl border border-teal-300 shadow-2xs shrink-0"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                          <FileText className="w-5 h-5" />
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-xs font-black text-slate-800 truncate" title={uploadedFile.name}>
-                          {uploadedFile.name}
-                        </p>
-                        <p className="text-[10px] text-slate-500">
-                          {isPdf ? 'Tệp PDF tài liệu' : 'Hình ảnh trang sách'} • {(uploadedFile.size / 1024).toFixed(0)} KB
-                        </p>
-                      </div>
-                    </div>
+                <div className="p-3 rounded-2xl bg-teal-50/70 border border-teal-200 space-y-2.5">
+                  {/* Header list files */}
+                  <div className="flex items-center justify-between border-b border-teal-200/60 pb-2">
+                    <span className="text-xs font-black text-teal-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Đã chọn ({uploadedFiles.length}) trang / tệp</span>
+                    </span>
 
-                    <button
-                      type="button"
-                      onClick={handleRemoveFile}
-                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                      title="Gỡ tệp này"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <label
+                        htmlFor="lesson-file-upload"
+                        className="text-[10px] font-bold text-teal-700 bg-white hover:bg-teal-100 border border-teal-300 px-2 py-0.5 rounded-lg cursor-pointer transition-colors"
+                      >
+                        + Thêm tệp
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleClearAllFiles}
+                        className="text-[10px] font-bold text-rose-600 hover:bg-rose-100/80 px-2 py-0.5 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Xóa tất cả
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Thumbnail list */}
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                    {uploadedFiles.map((f, idx) => {
+                      const isPdfFile = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+                      return (
+                        <div
+                          key={`${f.name}-${idx}`}
+                          className="flex items-center justify-between gap-2 p-1.5 bg-white rounded-xl border border-teal-100 shadow-2xs hover:border-teal-300 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {f.previewUrl ? (
+                              <img
+                                src={f.previewUrl}
+                                alt={`Trang ${idx + 1}`}
+                                className="w-8 h-8 object-cover rounded-lg border border-teal-200 shrink-0"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                                <FileText className="w-4 h-4" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold text-slate-800 truncate" title={f.name}>
+                                Trang {idx + 1}: {f.name}
+                              </p>
+                              <p className="text-[9px] text-slate-500">
+                                {isPdfFile ? 'PDF' : 'Hình ảnh'} • {(f.size / 1024).toFixed(0)} KB
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSingleFile(idx)}
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
+                            title="Xóa trang này"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Status Note */}
                   {isAnalyzingFile ? (
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-teal-800 bg-white/80 p-2 rounded-xl border border-teal-200 animate-pulse">
-                      <div className="w-3 h-3 border-2 border-teal-600 border-t-transparent rounded-full animate-spin" />
-                      <span>Đang tự động nhận diện tên bài học từ hình ảnh...</span>
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-teal-800 bg-white/90 p-2 rounded-xl border border-teal-200 animate-pulse">
+                      <div className="w-3.5 h-3.5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                      <span>Đang nhận dạng tên bài học từ {uploadedFiles.length} hình ảnh...</span>
                     </div>
                   ) : fileAnalysisNote ? (
                     <div
                       className={`text-[11px] p-2 rounded-xl border font-bold flex items-start gap-1.5 ${
-                        isPdf
+                        uploadedFiles.some((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
                           ? 'bg-amber-50 text-amber-900 border-amber-200'
                           : 'bg-emerald-50 text-emerald-900 border-emerald-200'
                       }`}
                     >
-                      {isPdf ? (
+                      {uploadedFiles.some((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) ? (
                         <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                       ) : (
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
@@ -933,7 +1088,13 @@ export const AiAssistantTab: React.FC = () => {
                 <label className="block text-xs font-black text-slate-700">
                   Tên bài học / Chủ đề bài dạy{' '}
                   <span className="text-rose-500">*</span>
-                  {isPdf && (
+                  {uploadedFiles.some((f) => f.type.startsWith('image/')) && topic && (
+                    <span className="text-[10px] text-emerald-700 font-bold ml-1.5 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-flex items-center gap-1 animate-pulse">
+                      <Sparkles className="w-3 h-3 text-emerald-600" />
+                      AI tự động điền từ hình ảnh
+                    </span>
+                  )}
+                  {uploadedFiles.some((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) && (
                     <span className="text-[10px] text-rose-600 font-bold ml-1 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
                       Bắt buộc cho file PDF
                     </span>
@@ -1053,12 +1214,12 @@ export const AiAssistantTab: React.FC = () => {
                     Năng lực số (CV 3456 & TT 02/2025)
                   </span>
                   <span className="text-[10px] text-teal-700 block">
-                    Gắn mã thành phần & tiêu chí chuẩn [1.3.CB1a], [4.1.CB2a]...
+                    Rà soát & soạn trực tiếp mã [1.3.CB1a], [4.1.CB2a]... vào hoạt động
                   </span>
                 </div>
               </label>
 
-              <label className="flex items-start gap-2 p-2 rounded-xl bg-amber-50/50 hover:bg-amber-50 border border-amber-200/60 cursor-pointer transition-colors">
+              <label className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-50/70 hover:bg-amber-50 border border-amber-200 cursor-pointer transition-colors">
                 <input
                   type="checkbox"
                   checked={enableStem}
@@ -1066,16 +1227,17 @@ export const AiAssistantTab: React.FC = () => {
                   className="mt-0.5 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
                 />
                 <div>
-                  <span className="text-xs font-black text-amber-900 block">
-                    Giáo dục STEM (CV 909/BGDĐT)
+                  <span className="text-xs font-black text-amber-950 flex items-center gap-1">
+                    <span>🔬 Giáo dục STEM (CV 909/BGDĐT & SGK STEM)</span>
+                    <span className="text-[9px] bg-amber-200/80 text-amber-900 px-1.5 py-0.2 rounded font-bold">Tự động nhận dạng 4 pha</span>
                   </span>
-                  <span className="text-[10px] text-amber-700 block">
-                    Nhãn [STEM - Mở đầu] & [STEM - Chế tạo & Thử nghiệm]
+                  <span className="text-[10px] text-amber-800 block mt-0.5 leading-tight">
+                    Tự động nhận diện bài học STEM tương ứng & soạn chuẩn 4 pha: 1. Mở đầu/Tiêu chí - 2. Kiến thức nền & Thiết kế - 3. Chế tạo/Thử nghiệm - 4. Đánh giá/Cải tiến.
                   </span>
                 </div>
               </label>
 
-              <label className="flex items-start gap-2 p-2 rounded-xl bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-200/60 cursor-pointer transition-colors">
+              <label className="flex items-start gap-2 p-2.5 rounded-xl bg-indigo-50/70 hover:bg-indigo-50 border border-indigo-200 cursor-pointer transition-colors">
                 <input
                   type="checkbox"
                   checked={enableCds}
@@ -1083,11 +1245,12 @@ export const AiAssistantTab: React.FC = () => {
                   className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                 />
                 <div>
-                  <span className="text-xs font-black text-indigo-900 block">
-                    Công dân số (CV 3899 & SGK Hành trình CĐS)
+                  <span className="text-xs font-black text-indigo-950 flex items-center gap-1">
+                    <span>🌐 Công dân số (CV 3899 & SGK Hành trình CĐS)</span>
+                    <span className="text-[9px] bg-indigo-200/80 text-indigo-900 px-1.5 py-0.2 rounded font-bold">Tự động nhận diện SGK CĐS</span>
                   </span>
-                  <span className="text-[10px] text-indigo-700 block">
-                    Ánh xạ chuẩn theo từng khối lớp 1 - 5
+                  <span className="text-[10px] text-indigo-800 block mt-0.5 leading-tight">
+                    Tự động nhận diện bài & hoạt động trong SGK Hành trình CĐS Lớp 1-5; soạn câu hỏi tình huống thực tế, hành vi ứng xử số văn minh & bảo mật thông tin.
                   </span>
                 </div>
               </label>
@@ -1115,10 +1278,21 @@ export const AiAssistantTab: React.FC = () => {
           {/* Saved Plans Library */}
           {savedPlans.length > 0 && (
             <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-xs space-y-2.5">
-              <span className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-                <Bookmark className="w-4 h-4 text-amber-500" />
-                <span>Thư viện giáo án đã lưu ({savedPlans.length}):</span>
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                  <Bookmark className="w-4 h-4 text-amber-500" />
+                  <span>Thư viện giáo án đã lưu ({savedPlans.length}):</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearAllSavedPlans}
+                  className="text-[11px] font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-0.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                  title="Xóa toàn bộ giáo án đã lưu trong tài khoản"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Xóa tất cả</span>
+                </button>
+              </div>
               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                 {savedPlans.map((plan) => (
                   <div
@@ -1181,8 +1355,8 @@ export const AiAssistantTab: React.FC = () => {
                   Đang biên soạn Kế hoạch bài dạy chuẩn quy chuẩn...
                 </h4>
                 <p className="text-xs text-slate-500">
-                  {uploadedFile
-                    ? `Bám sát nội dung tài liệu đính kèm: "${uploadedFile.name}" • Bảng 2 cột GV và HS`
+                  {uploadedFiles.length > 0
+                    ? `Bám sát nội dung ${uploadedFiles.length} tài liệu đính kèm ("${uploadedFiles[0].name}"...) • Bảng 2 cột GV và HS`
                     : 'Xây dựng 4 hoạt động chuẩn sư phạm • Bảng 2 cột GV và HS • Gắn mã Năng lực số, STEM và Công dân số'}
                 </p>
               </div>
@@ -1284,8 +1458,6 @@ export const AiAssistantTab: React.FC = () => {
                         <span>Môn: <strong className="text-slate-900">{period.header.subject}</strong></span>
                         <span>•</span>
                         <span>Lớp: <strong className="text-slate-900">{period.header.grade}</strong></span>
-                        <span>•</span>
-                        <span>Bộ sách: <strong className="text-slate-900">{currentPlan.bookSeries}</strong></span>
                         <span>•</span>
                         <span>Thời gian thực hiện: <strong className="text-slate-900">{period.header.timeRange || '.../.../....'}</strong></span>
                       </div>
@@ -1389,11 +1561,34 @@ export const AiAssistantTab: React.FC = () => {
                           {period.activities.map((act) => (
                             <div key={act.activityNumber} className="space-y-0">
                               {/* Dòng tiêu đề hoạt động */}
-                              <div className="bg-teal-100/60 p-2.5 font-black text-xs text-teal-950 border-b border-slate-300 flex items-center justify-between">
-                                <span>{act.activityName.toUpperCase()}</span>
-                                <span className="text-[10px] text-teal-700 font-bold bg-white/80 px-2 py-0.5 rounded-full border border-teal-200">
-                                  Quy trình 4 bước
-                                </span>
+                              <div className="bg-teal-100/70 p-2.5 font-black text-xs text-teal-950 border-b border-slate-300 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span>{act.activityName.toUpperCase()}</span>
+                                  {act.timeEstimate && (
+                                    <span className="text-[10px] font-normal text-teal-800 italic">
+                                      ({act.timeEstimate})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  {act.integrationNote && (
+                                    <span
+                                      className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border shadow-2xs ${
+                                        act.integrationNote.includes('STEM')
+                                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                          : act.integrationNote.includes('CÔNG DÂN SỐ') || act.integrationNote.includes('CĐS')
+                                          ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
+                                          : 'bg-teal-200/80 text-teal-900 border-teal-300'
+                                      }`}
+                                    >
+                                      <Sparkles className="w-3 h-3 shrink-0" />
+                                      <span>{act.integrationNote}</span>
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-teal-700 font-bold bg-white/80 px-2 py-0.5 rounded-full border border-teal-200">
+                                    Quy trình 4 bước
+                                  </span>
+                                </div>
                               </div>
 
                               {/* Tasks bên trong */}
@@ -1401,8 +1596,21 @@ export const AiAssistantTab: React.FC = () => {
                                 {act.tasks?.map((task) => (
                                   <div key={task.taskId} className="space-y-0">
                                     {/* Task Title (in nghiêng) */}
-                                    <div className="bg-slate-50 p-2 font-bold italic text-xs text-slate-800 border-b border-slate-200">
-                                      {task.taskTitle}
+                                    <div className="bg-slate-50 p-2 font-bold italic text-xs text-slate-800 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                                      <span>{task.taskTitle}</span>
+                                      {task.integrationNote && (
+                                        <span
+                                          className={`not-italic text-[10px] font-semibold px-2 py-0.5 rounded border inline-flex items-center gap-1 ${
+                                            task.integrationNote.includes('STEM')
+                                              ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                              : task.integrationNote.includes('CÔNG DÂN SỐ') || task.integrationNote.includes('CĐS')
+                                              ? 'bg-indigo-50 text-indigo-900 border-indigo-300'
+                                              : 'bg-emerald-100/80 text-emerald-800 border-emerald-300'
+                                          }`}
+                                        >
+                                          <span>✦ {task.integrationNote}</span>
+                                        </span>
+                                      )}
                                     </div>
 
                                     {/* Steps 1 to 4 */}
@@ -1416,7 +1624,7 @@ export const AiAssistantTab: React.FC = () => {
                                             <span className="font-bold text-teal-800 block text-[11px]">
                                               {step.stepName}:
                                             </span>
-                                            <p className="text-slate-800 leading-relaxed">
+                                            <p className="text-slate-800 leading-relaxed whitespace-pre-line">
                                               {step.teacherAction}
                                             </p>
                                           </div>
@@ -1424,7 +1632,7 @@ export const AiAssistantTab: React.FC = () => {
                                             <span className="font-bold text-slate-500 block text-[11px]">
                                               Thao tác / Phản hồi của HS:
                                             </span>
-                                            <p className="text-slate-800 leading-relaxed">
+                                            <p className="text-slate-800 leading-relaxed whitespace-pre-line">
                                               {step.studentAction}
                                             </p>
                                           </div>

@@ -531,7 +531,7 @@ export async function exportDetailedLessonPlanToDocx(
       alignment: AlignmentType.CENTER,
       children: [
         new TextRun({
-          text: `MÔN: ${plan.subject.toUpperCase()} - LỚP ${plan.grade} (${plan.bookSeries || 'GDPT 2018'})`,
+          text: `MÔN: ${plan.subject.toUpperCase()} - LỚP ${plan.grade}`,
           bold: true,
           size: 24,
           font: 'Times New Roman'
@@ -871,7 +871,18 @@ export async function exportDetailedLessonPlanToDocx(
                       bold: true,
                       size: 22,
                       font: 'Times New Roman'
-                    })
+                    }),
+                    ...(act.integrationNote
+                      ? [
+                          new TextRun({
+                            text: `\n✦ ${act.integrationNote}`,
+                            bold: true,
+                            italics: true,
+                            size: 20,
+                            font: 'Times New Roman'
+                          })
+                        ]
+                      : [])
                   ]
                 })
               ]
@@ -900,7 +911,18 @@ export async function exportDetailedLessonPlanToDocx(
                         italics: true,
                         size: 21,
                         font: 'Times New Roman'
-                      })
+                      }),
+                      ...(task.integrationNote
+                        ? [
+                            new TextRun({
+                              text: `  [${task.integrationNote}]`,
+                              bold: true,
+                              italics: true,
+                              size: 19,
+                              font: 'Times New Roman'
+                            })
+                          ]
+                        : [])
                     ]
                   })
                 ]

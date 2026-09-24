@@ -8,7 +8,16 @@ import {
   getDocFromServer
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { UserAccount, AppState, SchoolConfig, PpctItem, TimetableSlot, LessonPlanRow } from '../types';
+import {
+  UserAccount,
+  AppState,
+  SchoolConfig,
+  PpctItem,
+  TimetableSlot,
+  LessonPlanRow,
+  DetailedLessonPlan,
+  ConfiguredClass
+} from '../types';
 import { getDefaultState } from '../utils/helpers';
 
 // Operation types for error handling
@@ -278,6 +287,22 @@ export async function loadAppStateFromFirestore(
 }
 
 /**
+ * Get user-isolated LocalStorage keys
+ */
+export function getUserKhdhStorageKeys(userId?: string | null) {
+  const prefix = userId ? `khdh_u_${userId}` : 'khdh_u_guest';
+  return {
+    CONFIG: `${prefix}_config_v1`,
+    PPCT: `${prefix}_ppct_list_v1`,
+    TIMETABLE: `${prefix}_timetable_v1`,
+    CUSTOMIZED_WEEKS: `${prefix}_customized_weeks_v1`,
+    CONFIGURED_CLASSES: `${prefix}_configured_classes_v1`,
+    SAVED_PLANS: `${prefix}_saved_lesson_plans_v1`,
+    ACTIVE_TAB: `${prefix}_active_tab_v1`
+  };
+}
+
+/**
  * Save KHDH Data to Firestore
  */
 export async function saveKhdhDataToFirestore(
@@ -287,13 +312,14 @@ export async function saveKhdhDataToFirestore(
     ppctList: PpctItem[];
     timetable: TimetableSlot[];
     customizedWeeks: Record<number, LessonPlanRow[]>;
+    configuredClasses?: ConfiguredClass[];
   }
 ): Promise<boolean> {
-  const path = `khdh_data/${userId || 'shared'}`;
+  const sanitized = sanitizeFirestoreData(data);
   try {
     const docRef = doc(db, 'khdh_data', userId || 'shared');
     await setDoc(docRef, {
-      ...data,
+      ...sanitized,
       userId: userId || 'shared',
       updatedAt: new Date().toISOString()
     });
@@ -316,6 +342,7 @@ export async function loadKhdhDataFromFirestore(userId: string): Promise<{
   ppctList?: PpctItem[];
   timetable?: TimetableSlot[];
   customizedWeeks?: Record<number, LessonPlanRow[]>;
+  configuredClasses?: ConfiguredClass[];
 } | null> {
   try {
     const docRef = doc(db, 'khdh_data', userId || 'shared');
@@ -325,6 +352,53 @@ export async function loadKhdhDataFromFirestore(userId: string): Promise<{
     }
   } catch (err) {
     console.warn('Load KHDH data Firestore notice:', err);
+  }
+  return null;
+}
+
+/**
+ * Save Lesson Plans Library to Firestore for specific user
+ */
+export async function saveLessonPlansToFirestore(
+  userId: string,
+  plans: DetailedLessonPlan[]
+): Promise<boolean> {
+  const sanitized = sanitizeFirestoreData({ plans });
+  try {
+    const docRef = doc(db, 'lesson_plans', userId || 'shared');
+    await setDoc(docRef, {
+      userId: userId || 'shared',
+      plans: sanitized.plans || [],
+      updatedAt: new Date().toISOString()
+    });
+    return true;
+  } catch (err: any) {
+    if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
+      console.warn('Firestore unavailable, Lesson Plans saved locally only.');
+      return false;
+    }
+    console.warn('Save Lesson Plans Firestore notice:', err?.message || err);
+    return false;
+  }
+}
+
+/**
+ * Load Lesson Plans Library from Firestore for specific user
+ */
+export async function loadLessonPlansFromFirestore(
+  userId: string
+): Promise<DetailedLessonPlan[] | null> {
+  try {
+    const docRef = doc(db, 'lesson_plans', userId || 'shared');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && Array.isArray(data.plans)) {
+        return data.plans as DetailedLessonPlan[];
+      }
+    }
+  } catch (err) {
+    console.warn('Load Lesson Plans Firestore notice:', err);
   }
   return null;
 }

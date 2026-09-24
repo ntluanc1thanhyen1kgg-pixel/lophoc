@@ -5,50 +5,45 @@ import { PpctManager } from './PpctManager';
 import { TkbManager } from './TkbManager';
 import { AiAssistantTab } from './AiAssistantTab';
 import { SettingsTab } from './SettingsTab';
-import { SchoolConfig, PpctItem, TimetableSlot, LessonPlanRow } from '../types';
+import { SchoolConfig, PpctItem, TimetableSlot, LessonPlanRow, ConfiguredClass, UserAccount } from '../types';
 import {
   defaultSchoolConfig,
   defaultPpctList,
   defaultTimetable
 } from '../data/defaultData';
-import { saveKhdhDataToFirestore, loadKhdhDataFromFirestore, getSavedSessionUser } from '../services/dbService';
+import {
+  saveKhdhDataToFirestore,
+  loadKhdhDataFromFirestore,
+  getSavedSessionUser,
+  getUserKhdhStorageKeys
+} from '../services/dbService';
 
-const STORAGE_KEYS = {
-  CONFIG: 'khdh_school_config_v1',
-  PPCT: 'khdh_ppct_list_v1',
-  TIMETABLE: 'khdh_timetable_v1',
-  CUSTOMIZED_WEEKS: 'khdh_customized_weeks_v1',
-  ACTIVE_TAB: 'khdh_active_tab_v1'
-};
+const DEFAULT_CONFIGURED_CLASSES: ConfiguredClass[] = [
+  { id: 'c-3a1', name: '3A1', grade: 3 },
+  { id: 'c-3a2', name: '3A2', grade: 3 },
+  { id: 'c-4a1', name: '4A1', grade: 4 },
+  { id: 'c-4a2', name: '4A2', grade: 4 },
+  { id: 'c-5a1', name: '5A1', grade: 5 },
+  { id: 'c-5a2', name: '5A2', grade: 5 },
+  { id: 'c-cc', name: 'Chào cờ', grade: 0 },
+  { id: 'c-shl', name: 'Sinh hoạt lớp', grade: 0 }
+];
 
-export const KhdhModule: React.FC = () => {
+interface KhdhModuleProps {
+  currentUser?: UserAccount | null;
+}
+
+export const KhdhModule: React.FC<KhdhModuleProps> = ({ currentUser: propCurrentUser }) => {
+  const activeUser = propCurrentUser || getSavedSessionUser();
+  const userId = activeUser?.id || 'shared';
+  const keys = getUserKhdhStorageKeys(activeUser?.id);
+
   // 1. School config state
   const [config, setConfig] = useState<SchoolConfig>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CONFIG);
+      const saved = localStorage.getItem(keys.CONFIG) || localStorage.getItem('khdh_school_config_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.documentTitle === 'KẾ HOẠCH DẠY HỌC (LỊCH BÁO GIẢNG)') {
-          parsed.documentTitle = 'KẾ HOẠCH DẠY HỌC';
-        }
-        if (parsed.departmentName === 'TRƯỜNG TIỂU HỌC THẠNH YÊN 1') {
-          parsed.departmentName = 'TỔ CHUYÊN MÔN 4+5';
-        }
-        if (parsed.location === 'Vĩnh Hòa') {
-          parsed.location = 'Vĩnh Hòa';
-        }
-        if (parsed.principalTitle === 'HIỆU TRƯỞNG') {
-          parsed.principalTitle = 'DUYỆT CỦA P.HIỆU TRƯỜNG';
-        }
-        if (parsed.headTeacherTitle === 'TỔ TRƯỞNG CHUYÊN MÔN') {
-          parsed.headTeacherTitle = 'TỔ TRƯỞNG';
-        }
-        if (parsed.teacherTitle === 'GIÁO VIÊN GIẢNG DẠY') {
-          parsed.teacherTitle = 'GIÁO VIÊN';
-        }
-        if (parsed.subjectTitle === 'MÔN: TIN HỌC & CÔNG NGHỆ') {
-          parsed.subjectTitle = 'MÔN: TIN HỌC - CÔNG NGHỆ';
-        }
         return parsed;
       }
     } catch (e) {
@@ -60,7 +55,7 @@ export const KhdhModule: React.FC = () => {
   // 2. PPCT list state
   const [ppctList, setPpctList] = useState<PpctItem[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PPCT);
+      const saved = localStorage.getItem(keys.PPCT) || localStorage.getItem('khdh_ppct_list_v1');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error('Error loading khdh ppct:', e);
@@ -71,7 +66,7 @@ export const KhdhModule: React.FC = () => {
   // 3. Timetable state
   const [timetable, setTimetable] = useState<TimetableSlot[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.TIMETABLE);
+      const saved = localStorage.getItem(keys.TIMETABLE) || localStorage.getItem('khdh_timetable_v1');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error('Error loading khdh timetable:', e);
@@ -82,7 +77,7 @@ export const KhdhModule: React.FC = () => {
   // 4. Customized weeks state
   const [customizedWeeks, setCustomizedWeeks] = useState<Record<number, LessonPlanRow[]>>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMIZED_WEEKS);
+      const saved = localStorage.getItem(keys.CUSTOMIZED_WEEKS) || localStorage.getItem('khdh_customized_weeks_v1');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error('Error loading khdh customized weeks:', e);
@@ -90,10 +85,24 @@ export const KhdhModule: React.FC = () => {
     return {};
   });
 
-  // 5. Active Tab
+  // 5. Configured classes state
+  const [configuredClasses, setConfiguredClasses] = useState<ConfiguredClass[]>(() => {
+    try {
+      const saved = localStorage.getItem(keys.CONFIGURED_CLASSES) || localStorage.getItem('khdh_configured_classes_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Error loading configured classes:', e);
+    }
+    return DEFAULT_CONFIGURED_CLASSES;
+  });
+
+  // 6. Active Tab
   const [activeTab, setActiveTab] = useState<KhdhTabId>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB);
+      const saved = localStorage.getItem(keys.ACTIVE_TAB) || localStorage.getItem('khdh_active_tab_v1');
       if (saved && ['document', 'ppct', 'tkb', 'ai', 'settings'].includes(saved)) {
         return saved as KhdhTabId;
       }
@@ -117,40 +126,96 @@ export const KhdhModule: React.FC = () => {
     } catch {}
   }, [activeTab]);
 
-  // Load from Firestore on initial mount
+  // Load from Firestore whenever currentUser changes or on initial mount
   useEffect(() => {
+    let active = true;
     async function loadFromCloud() {
-      const currentUser = getSavedSessionUser();
-      const userId = currentUser?.id || 'shared';
-      const cloudData = await loadKhdhDataFromFirestore(userId);
-      if (cloudData) {
-        if (cloudData.config) setConfig(cloudData.config);
-        if (cloudData.ppctList) setPpctList(cloudData.ppctList);
-        if (cloudData.timetable) setTimetable(cloudData.timetable);
-        if (cloudData.customizedWeeks) setCustomizedWeeks(cloudData.customizedWeeks);
+      const currentUserId = activeUser?.id || 'shared';
+      const userKeys = getUserKhdhStorageKeys(activeUser?.id);
+
+      // Fast sync with user local storage cache first
+      try {
+        const savedCfg = localStorage.getItem(userKeys.CONFIG);
+        if (savedCfg && active) setConfig(JSON.parse(savedCfg));
+        const savedPpct = localStorage.getItem(userKeys.PPCT);
+        if (savedPpct && active) setPpctList(JSON.parse(savedPpct));
+        const savedTkb = localStorage.getItem(userKeys.TIMETABLE);
+        if (savedTkb && active) setTimetable(JSON.parse(savedTkb));
+        const savedWeeks = localStorage.getItem(userKeys.CUSTOMIZED_WEEKS);
+        if (savedWeeks && active) setCustomizedWeeks(JSON.parse(savedWeeks));
+        const savedCls = localStorage.getItem(userKeys.CONFIGURED_CLASSES);
+        if (savedCls && active) setConfiguredClasses(JSON.parse(savedCls));
+      } catch (err) {
+        console.warn('Local storage parse on user switch:', err);
+      }
+
+      // Fetch cloud state from Firestore
+      try {
+        const cloudData = await loadKhdhDataFromFirestore(currentUserId);
+        if (cloudData && active) {
+          if (cloudData.config) {
+            setConfig(cloudData.config);
+            localStorage.setItem(userKeys.CONFIG, JSON.stringify(cloudData.config));
+          }
+          if (cloudData.ppctList) {
+            setPpctList(cloudData.ppctList);
+            localStorage.setItem(userKeys.PPCT, JSON.stringify(cloudData.ppctList));
+          }
+          if (cloudData.timetable) {
+            setTimetable(cloudData.timetable);
+            localStorage.setItem(userKeys.TIMETABLE, JSON.stringify(cloudData.timetable));
+          }
+          if (cloudData.customizedWeeks) {
+            setCustomizedWeeks(cloudData.customizedWeeks);
+            localStorage.setItem(userKeys.CUSTOMIZED_WEEKS, JSON.stringify(cloudData.customizedWeeks));
+          }
+          if (cloudData.configuredClasses && Array.isArray(cloudData.configuredClasses)) {
+            setConfiguredClasses(cloudData.configuredClasses);
+            localStorage.setItem(userKeys.CONFIGURED_CLASSES, JSON.stringify(cloudData.configuredClasses));
+          }
+        }
+      } catch (err) {
+        console.warn('Error loading KHDH cloud data:', err);
       }
     }
-    loadFromCloud();
-  }, []);
 
-  // Save to localStorage & Firestore
+    loadFromCloud();
+    return () => {
+      active = false;
+    };
+  }, [activeUser?.id]);
+
+  // Save to localStorage & Firestore with debouncing
   useEffect(() => {
+    const userKeys = getUserKhdhStorageKeys(activeUser?.id);
     try {
-      localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(config));
-      const currentUser = getSavedSessionUser();
-      saveKhdhDataToFirestore(currentUser?.id || 'shared', {
+      localStorage.setItem(userKeys.CONFIG, JSON.stringify(config));
+      localStorage.setItem(userKeys.PPCT, JSON.stringify(ppctList));
+      localStorage.setItem(userKeys.TIMETABLE, JSON.stringify(timetable));
+      localStorage.setItem(userKeys.CUSTOMIZED_WEEKS, JSON.stringify(customizedWeeks));
+      localStorage.setItem(userKeys.CONFIGURED_CLASSES, JSON.stringify(configuredClasses));
+    } catch (e) {
+      console.warn('Error saving KHDH local cache:', e);
+    }
+
+    const timer = setTimeout(() => {
+      saveKhdhDataToFirestore(activeUser?.id || 'shared', {
         config,
         ppctList,
         timetable,
-        customizedWeeks
-      });
-    } catch {}
-  }, [config, ppctList, timetable, customizedWeeks]);
+        customizedWeeks,
+        configuredClasses
+      }).catch((err) => console.warn('Error saving KHDH to Firestore:', err));
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [config, ppctList, timetable, customizedWeeks, configuredClasses, activeUser?.id]);
 
   const handleTabChange = (tab: KhdhTabId) => {
     setActiveTab(tab);
     try {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, tab);
+      const userKeys = getUserKhdhStorageKeys(activeUser?.id);
+      localStorage.setItem(userKeys.ACTIVE_TAB, tab);
     } catch {}
   };
 
@@ -215,10 +280,12 @@ export const KhdhModule: React.FC = () => {
             timetable={timetable}
             onUpdateTimetable={setTimetable}
             onResetTimetable={handleResetTimetable}
+            configuredClasses={configuredClasses}
+            onUpdateConfiguredClasses={setConfiguredClasses}
           />
         )}
 
-        {activeTab === 'ai' && <AiAssistantTab />}
+        {activeTab === 'ai' && <AiAssistantTab currentUser={activeUser} />}
 
         {activeTab === 'settings' && (
           <SettingsTab

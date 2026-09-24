@@ -27,15 +27,47 @@ if (apiKey) {
   }
 }
 
+// Helper to robustly parse JSON from AI response, repairing common truncation or formatting issues
+function safeParseJSON(rawText: string | null | undefined): any {
+  if (!rawText) return null;
+  const cleaned = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+
+  // Attempt 1: Direct JSON parse
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // Attempt 2: Extract content between outermost braces
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      const jsonSub = cleaned.substring(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(jsonSub);
+      } catch {
+        // Attempt 3: Repair trailing commas or unescaped control chars
+        try {
+          const sanitized = jsonSub
+            .replace(/,\s*([}\]])/g, '$1')
+            .replace(/[\u0000-\u001F\u007F-\u009F]/g, (m) => (m === '\n' || m === '\r' || m === '\t' ? m : ''));
+          return JSON.parse(sanitized);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+  return null;
+}
+
 // Fallback Model Pool per SKILL.md specs
 const FALLBACK_MODELS = [
-  'gemini-3.8-flash',
-  'gemini-flash-latest',
-  'gemini-3.1-flash-lite',
-  'gemini-3.1-pro-preview'
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-2.5-pro'
 ];
 
-async function generateWithGemini(contents: any, customKey?: string): Promise<string | null> {
+async function generateWithGemini(contents: any, customKey?: string, configOptions?: any): Promise<string | null> {
   let client = defaultAi;
   if (customKey && customKey.trim()) {
     try {
@@ -51,7 +83,8 @@ async function generateWithGemini(contents: any, customKey?: string): Promise<st
     try {
       const response = await client.models.generateContent({
         model: modelName,
-        contents
+        contents,
+        ...(configOptions ? { config: configOptions } : {})
       });
       if (response.text) {
         return response.text.trim();
@@ -104,7 +137,7 @@ function buildStandardLessonPlan(params: {
     grade = '3',
     subject = 'Tin học',
     totalPeriods = 2,
-    bookSeries = 'Kết nối tri thức với cuộc sống',
+    bookSeries = 'GDPT 2018',
     enableNls = true,
     enableStem = true,
     enableCds = true,
@@ -124,10 +157,265 @@ function buildStandardLessonPlan(params: {
     const periodTitle = `${cleanTopic} (${totalPeriods} tiết) ; Tiết ${p}`;
     const isPeriod1 = p === 1;
 
+    const validGradeKey = (numericGrade >= 1 && numericGrade <= 5 ? numericGrade : 3) as 1 | 2 | 3 | 4 | 5;
+    
+    // STEM Database mapping per grade
+    const stemGuideByGrade: Record<1 | 2 | 3 | 4 | 5, { title: string; problem: string; criteria: string; material: string }> = {
+      1: {
+        title: 'Bài học STEM: Ngôi nhà hình học và Đồ chơi sáng tạo (Môn chủ đạo: Toán/TNXH 1)',
+        problem: 'Thiết kế mô hình ngôi nhà hoặc công viên đồ chơi từ các hình phẳng và khối hình học.',
+        criteria: 'Mô hình vững chắc, sử dụng đúng hình vuông, tròn, tam giác, chữ nhật và màu sắc hài hòa.',
+        material: 'Bìa carton, giấy màu, que kem, kéo thủ công, keo dán an toàn.'
+      },
+      2: {
+        title: 'Bài học STEM: Thước đo thông minh & Dụng cụ đo hướng gió (Môn chủ đạo: Toán/TNXH 2)',
+        problem: 'Chế tạo thước đo độ dài chuẩn xác hoặc chong chóng đo hướng gió để quan sát chuyển động không khí.',
+        criteria: 'Vạch chia độ dài chính xác (cm, dm), chong chóng quay nhạy khi có gió thổi.',
+        material: 'Dải ruy băng, bìa cứng, que gỗ, ống hút nhựa cứng, đinh ghim an toàn.'
+      },
+      3: {
+        title: 'Bài học STEM: Bàn cờ toán học & Bản đồ Robot dẫn đường (Môn chủ đạo: Toán/Tin học 3)',
+        problem: 'Tính toán chu vi diện tích làm khung tranh đa năng hoặc lập bản đồ thẻ lệnh cho robot di chuyển tuần tự.',
+        criteria: 'Kích thước đo đạc chuẩn xác theo cm, bộ thẻ lệnh điều khiển robot đi đúng đường không chạm vách.',
+        material: 'Bìa carton sóng, giấy kẻ ô, thước kẻ, quân cờ robot, bộ thẻ lệnh in màu.'
+      },
+      4: {
+        title: 'Bài học STEM: Bình giữ nhiệt mini & Xe phản lực chuyển động (Môn chủ đạo: Khoa học/Công nghệ 4)',
+        problem: 'Vận dụng vật liệu cách nhiệt làm bình giữ nhiệt hoặc chế tạo xe chạy bằng lực đẩy không khí của bóng bay.',
+        criteria: 'Nhiệt độ nước ấm duy trì tốt sau 30 phút; xe chạy thẳng và đạt quãng đường tối thiểu 2m.',
+        material: 'Vỏ chai nhựa, giấy bạc cách nhiệt, bông gòn, que xiên tre, bánh xe nhựa, bóng bay.'
+      },
+      5: {
+        title: 'Bài học STEM: Đèn ngủ thông minh & Cột lọc nước tự nhiên 4 tầng (Môn chủ đạo: Khoa học/Toán 5)',
+        problem: 'Lắp ráp mô hình ngôi nhà năng lượng xanh có mạch điện LED hoặc làm cột lọc nước cơ học 4 tầng.',
+        criteria: 'Mạch điện hoạt động an toàn, công tắc nhạy; nước sau lọc trong, loại bỏ tạp chất cơ bản.',
+        material: 'Hộp pin 3V, đèn LED, công tắc gạt, vỏ chai 1.5L, sỏi sạch, cát thạch anh, than hoạt tính, bông gòn.'
+      }
+    };
+
+    const currentStem = stemGuideByGrade[validGradeKey];
+
+    // Smart detection of Digital Citizenship lesson & activity from SGK Hành trình CĐS (Lớp 1-5)
+    const getCdsIntegrationInfo = (gr: 1 | 2 | 3 | 4 | 5, tp: string): {
+      title: string;
+      textbookLesson: string;
+      textbookActivity: string;
+      objective: string;
+      situation: string;
+      studentSolution: string;
+      badge: string;
+    } => {
+      const lower = tp.toLowerCase();
+
+      if (gr === 1) {
+        if (lower.includes('ngồi') || lower.includes('mắt') || lower.includes('máy tính') || lower.includes('thiết bị') || lower.includes('tivi')) {
+          return {
+            title: 'Bài 2: Tư thế ngồi chuẩn và bảo vệ mắt khi sử dụng thiết bị số (SGK Hành trình CĐS Lớp 1)',
+            textbookLesson: 'Bài 2: Tư thế ngồi chuẩn và bảo vệ mắt khi sử dụng thiết bị số',
+            textbookActivity: 'Hoạt động 3: Thực hành tư thế ngồi đúng và khoảng cách an toàn với màn hình (50-70cm)',
+            objective: 'Hình thành thói quen ngồi thẳng lưng, giữ khoảng cách mắt từ 50-70cm và nghỉ ngơi sau mỗi 20 phút sử dụng thiết bị số.',
+            situation: 'Khi học bài với thiết bị số (máy tính hoặc tivi thông minh), em cần ngồi cách màn hình bao xa và giữ tư thế như thế nào để bảo vệ mắt và cột sống?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 3 - Bài 2 SGK Hành trình CĐS Lớp 1, em ngồi thẳng lưng, mắt cách màn hình từ 50 đến 70cm, phòng đủ ánh sáng và cho mắt nghỉ sau mỗi 20 phút học tập."',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 1 - Bài 2: Tư thế ngồi chuẩn & Bảo vệ mắt (HĐ 3)]'
+          };
+        }
+        if (lower.includes('gia đình') || lower.includes('giao tiếp') || lower.includes('người lớn') || lower.includes('chào')) {
+          return {
+            title: 'Bài 3: Giao tiếp lễ phép và an toàn trong gia đình số (SGK Hành trình CĐS Lớp 1)',
+            textbookLesson: 'Bài 3: Giao tiếp lễ phép và an toàn trong gia đình số',
+            textbookActivity: 'Hoạt động 2: Lễ phép xin phép người lớn trước khi sử dụng thiết bị điện tử',
+            objective: 'Biết lễ phép xin phép cha mẹ/thầy cô trước khi mở thiết bị số và tuân thủ thời gian quy định.',
+            situation: 'Khi muốn mượn điện thoại hoặc mở tivi thông minh để xem chương trình học tập, em cần làm gì?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 3 SGK Hành trình CĐS Lớp 1, em luôn lễ phép xin phép người lớn trước khi dùng và tắt thiết bị đúng giờ được cho phép."',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 1 - Bài 3: Giao tiếp lễ phép trong môi trường số (HĐ 2)]'
+          };
+        }
+        return {
+          title: 'Bài 1: Làm quen và giữ gìn thiết bị số an toàn (SGK Hành trình CĐS Lớp 1)',
+          textbookLesson: 'Bài 1: Làm quen và giữ gìn thiết bị số an toàn',
+          textbookActivity: 'Hoạt động 2: Nhận diện thiết bị số và cách cầm nắm, bảo quản cẩn thận',
+          objective: 'Nhận biết các bộ phận thiết bị số và biết giữ gìn, không làm rơi vỡ, không để nước hay đồ ăn gần thiết bị.',
+          situation: 'Sau khi học xong với thiết bị học tập, em sẽ bảo quản và cất đặt thiết bị như thế nào để đảm bảo an toàn?',
+          studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 1 SGK Hành trình CĐS Lớp 1, em cất thiết bị vào vị trí khô ráo, ngay ngắn, không ăn uống gần thiết bị để tránh chập hỏng."',
+          badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 1 - Bài 1: Làm quen & Bảo quản thiết bị số (HĐ 2)]'
+        };
+      }
+
+      if (gr === 2) {
+        if (lower.includes('thông tin') || lower.includes('tên') || lower.includes('địa chỉ') || lower.includes('cá nhân') || lower.includes('dữ liệu') || lower.includes('bí mật')) {
+          return {
+            title: 'Bài 1: Bảo vệ thông tin cá nhân trên môi trường số (SGK Hành trình CĐS Lớp 2)',
+            textbookLesson: 'Bài 1: Bảo vệ thông tin cá nhân trên môi trường số',
+            textbookActivity: 'Hoạt động 2: Nhận diện thông tin riêng tư và quy tắc giữ bí mật trước người lạ',
+            objective: 'Nhận biết thông tin cá nhân là bí mật (họ tên, địa chỉ nhà, số điện thoại, mật khẩu) và tuyệt đối không chia sẻ cho người lạ.',
+            situation: 'Nếu có một trang web học tập hoặc một người lạ trực tuyến hỏi họ tên đầy đủ, số điện thoại và địa chỉ nhà của em, em sẽ xử lý thế nào?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 1 SGK Hành trình CĐS Lớp 2, thông tin cá nhân là tài sản riêng tư, em không bao giờ cung cấp cho người lạ và sẽ thông báo ngay cho cha mẹ/thầy cô."',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 2 - Bài 1: Bảo vệ thông tin cá nhân (HĐ 2)]'
+          };
+        }
+        if (lower.includes('link') || lower.includes('mạng') || lower.includes('lạ') || lower.includes('kết bạn') || lower.includes('nguy cơ')) {
+          return {
+            title: 'Bài 2: Nhận biết đường link lạ và người không quen biết trên mạng (SGK Hành trình CĐS Lớp 2)',
+            textbookLesson: 'Bài 2: Nhận biết đường link lạ và người không quen biết trên mạng',
+            textbookActivity: 'Hoạt động 3: Xử lý thông báo trúng thưởng và lời mời kết bạn từ người lạ',
+            objective: 'Cảnh giác trước các thông báo tặng quà/link lạ và không tự ý bấm vào khi chưa có sự đồng ý của người lớn.',
+            situation: 'Khi đang dùng máy tính mà màn hình hiện lên thông báo: "Bạn đã trúng thưởng một món quà lớn, bấm vào đây ngay", em sẽ làm gì?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 3 - Bài 2 SGK Hành trình CĐS Lớp 2, đây là liên kết lạ nguy hiểm, em không bấm vào mà gọi ngay cho thầy cô/cha mẹ hỗ trợ đóng cửa sổ đó lại."',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 2 - Bài 2: Nhận diện liên kết lạ & Phòng tránh nguy cơ (HĐ 3)]'
+          };
+        }
+        return {
+          title: 'Bài 3: Lời nói đẹp và ứng xử văn minh trong môi trường số (SGK Hành trình CĐS Lớp 2)',
+          textbookLesson: 'Bài 3: Lời nói đẹp và ứng xử văn minh trong môi trường số',
+          textbookActivity: 'Hoạt động 2: Sử dụng ngôn từ lịch sự, tôn trọng khi trao đổi trực tuyến',
+          objective: 'Rèn luyện thói quen chào hỏi, cảm ơn, nói lời hay và không trêu chọc bạn bè khi học tập trực tuyến.',
+          situation: 'Khi gửi tin nhắn thảo luận bài học cùng bạn trong nhóm lớp trực tuyến, em nên dùng lời lẽ như thế nào?',
+          studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 3 SGK Hành trình CĐS Lớp 2, em luôn xưng hô lịch sự, nói lời động viên và tôn trọng ý kiến đóng góp của các bạn."',
+          badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 2 - Bài 3: Lời nói đẹp & Ứng xử văn minh (HĐ 2)]'
+        };
+      }
+
+      if (gr === 3) {
+        if (lower.includes('mật khẩu') || lower.includes('tài khoản') || lower.includes('đăng nhập') || lower.includes('chìa khóa') || lower.includes('bảo vệ')) {
+          return {
+            title: 'Bài 2: Mật khẩu an toàn - Chiếc chìa khóa bảo vệ dữ liệu (SGK Hành trình CĐS Lớp 3)',
+            textbookLesson: 'Bài 2: Mật khẩu an toàn - Chiếc chìa khóa bảo vệ dữ liệu',
+            textbookActivity: 'Hoạt động 3: Đặt mật khẩu mạnh và giữ bí mật tài khoản học tập trực tuyến',
+            objective: 'Biết cách tạo mật khẩu an toàn kết hợp chữ, số và ký tự; giữ bí mật tuyệt đối và đăng xuất sau khi sử dụng.',
+            situation: 'Khi bạn cùng lớp quên mật khẩu và hỏi mượn tài khoản học tập trực tuyến của em để làm bài, em sẽ giải quyết như thế nào?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 3 - Bài 2 SGK Hành trình CĐS Lớp 3, mật khẩu là chiếc chìa khóa riêng tư không được chia sẻ cho người khác; em sẽ từ chối khéo léo và cùng bạn nhờ thầy cô hỗ trợ cấp lại mật khẩu cho bạn."',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 3 - Bài 2: Mật khẩu an toàn & Bảo vệ dữ liệu (HĐ 3)]'
+          };
+        }
+        if (lower.includes('tìm kiếm') || lower.includes('tra cứu') || lower.includes('thông tin') || lower.includes('internet') || lower.includes('web') || lower.includes('trình duyệt')) {
+          return {
+            title: 'Bài 1: Tìm kiếm thông tin học tập an toàn với từ khóa chuẩn (SGK Hành trình CĐS Lớp 3)',
+            textbookLesson: 'Bài 1: Tìm kiếm thông tin học tập an toàn với từ khóa chuẩn',
+            textbookActivity: 'Hoạt động 2: Lựa chọn từ khóa học tập lành mạnh và chọn lọc trang web giáo dục uy tín',
+            objective: 'Biết sử dụng từ khóa ngắn gọn, chính xác để tra cứu tư liệu học tập và chỉ truy cập các trang web an toàn.',
+            situation: 'Khi được giao nhiệm vụ tra cứu thông tin về bài học trên Internet, em làm thế nào để tìm được tài liệu chính xác và an toàn nhất?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 1 SGK Hành trình CĐS Lớp 3, em gõ từ khóa rõ ràng liên quan trực tiếp đến bài học và ưu tiên truy cập vào các trang web giáo dục có đuôi .edu.vn hoặc trang chính thống."',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 3 - Bài 1: Tìm kiếm thông tin học tập an toàn (HĐ 2)]'
+          };
+        }
+        if (lower.includes('hình ảnh') || lower.includes('bản quyền') || lower.includes('tác giả') || lower.includes('sao chép') || lower.includes('tranh')) {
+          return {
+            title: 'Bài 3: Tôn trọng quyền tác giả và bản quyền hình ảnh số (SGK Hành trình CĐS Lớp 3)',
+            textbookLesson: 'Bài 3: Tôn trọng quyền tác giả và bản quyền hình ảnh số',
+            textbookActivity: 'Hoạt động 2: Ghi nguồn tác giả khi sử dụng hình ảnh, bài viết từ mạng Internet',
+            objective: 'Hình thành ý thức tôn trọng quyền sở hữu trí tuệ, biết xin phép hoặc ghi rõ nguồn khi dùng tư liệu của người khác.',
+            situation: 'Khi lấy một hình ảnh minh họa đẹp trên mạng về để chèn vào bài học tập, em cần thực hiện điều gì?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 3 SGK Hành trình CĐS Lớp 3, em phải ghi rõ dòng chú thích nguồn gốc và tên tác giả/trang web phía dưới bức ảnh để thể hiện sự tôn trọng bản quyền."',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 3 - Bài 3: Tôn trọng bản quyền tác giả số (HĐ 2)]'
+          };
+        }
+        return {
+          title: 'Bài 4: Phòng tránh bị làm phiền và báo cáo nguy cơ trên không gian mạng (SGK Hành trình CĐS Lớp 3)',
+          textbookLesson: 'Bài 4: Phòng tránh bị làm phiền và báo cáo nguy cơ trên không gian mạng',
+          textbookActivity: 'Hoạt động 3: Kỹ năng xử lý khi gặp tin nhắn xấu độc hoặc người lạ làm phiền',
+          objective: 'Biết cách từ chối, không phản hồi và báo ngay cho người lớn khi gặp thông tin độc hại trên môi trường số.',
+          situation: 'Nếu bất ngờ nhận được tin nhắn có nội dung không lành mạnh hoặc bị người khác nói xấu trong nhóm học tập, em sẽ làm gì?',
+          studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 3 - Bài 4 SGK Hành trình CĐS Lớp 3, em không trả lời tin nhắn xấu đó, lập tức chụp màn hình làm bằng chứng và báo ngay cho thầy cô hoặc cha mẹ hỗ trợ xử lý."',
+          badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 3 - Bài 4: Phòng tránh nguy cơ & Báo cáo an toàn mạng (HĐ 3)]'
+        };
+      }
+
+      if (gr === 4) {
+        if (lower.includes('chia sẻ') || lower.includes('đăng') || lower.includes('ảnh') || lower.includes('bài viết') || lower.includes('mạng xã hội') || lower.includes('dấu chân')) {
+          return {
+            title: 'Bài 1: Dấu chân kỹ thuật số (Digital Footprint) và trách nhiệm công dân số (SGK Hành trình CĐS Lớp 4)',
+            textbookLesson: 'Bài 1: Dấu chân kỹ thuật số (Digital Footprint) và trách nhiệm công dân số',
+            textbookActivity: 'Hoạt động 2: Nhận thức mọi bài đăng, bình luận đều lưu lại vết tích số vĩnh viễn',
+            objective: 'Hiểu rõ khái niệm dấu chân số; rèn luyện thói quen suy nghĩ cẩn trọng trước khi nhấn nút chia sẻ hoặc bình luận.',
+            situation: 'Trước khi đăng tải một bức ảnh chụp bài học nhóm hay một dòng nhận xét lên mạng học tập, em cần tự hỏi mình điều gì?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 1 SGK Hành trình CĐS Lớp 4, mọi hoạt động đều để lại dấu chân số; em cần tự hỏi: Thông tin này có đúng sự thật không? Có làm tổn thương ai không? Và có sự đồng ý của các bạn chưa?"',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 4 - Bài 1: Dấu chân kỹ thuật số & Trách nhiệm chia sẻ (HĐ 2)]'
+          };
+        }
+        if (lower.includes('virus') || lower.includes('mã độc') || lower.includes('tải') || lower.includes('phần mềm') || lower.includes('tệp tin') || lower.includes('bảo vệ')) {
+          return {
+            title: 'Bài 2: Phòng chống mã độc, lừa đảo trực tuyến và bảo vệ thiết bị (SGK Hành trình CĐS Lớp 4)',
+            textbookLesson: 'Bài 2: Phòng chống mã độc, lừa đảo trực tuyến và bảo vệ thiết bị',
+            textbookActivity: 'Hoạt động 3: Kiểm tra tính an toàn của tệp tin trước khi tải về và cài đặt',
+            objective: 'Biết cách nhận biết tệp tin lạ có nguy cơ chứa virus; không tự ý tải và cài đặt phần mềm không rõ nguồn gốc.',
+            situation: 'Khi tìm tài liệu trên mạng và thấy nút "Tải về miễn phí ngay" kèm cảnh báo tệp có đuôi lạ (.exe, .scr), em sẽ xử lý như thế nào?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 3 - Bài 2 SGK Hành trình CĐS Lớp 4, các tệp tin lạ dễ chứa mã độc làm hỏng máy tính; em tuyệt đối không tải về và chỉ nhờ giáo viên kiểm tra tệp an toàn."',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 4 - Bài 2: Phòng chống mã độc & Lừa đảo trực tuyến (HĐ 3)]'
+          };
+        }
+        if (lower.includes('tin tức') || lower.includes('sự thật') || lower.includes('kiểm chứng') || lower.includes('tin giả') || lower.includes('báo')) {
+          return {
+            title: 'Bài 3: Văn hóa chia sẻ và kiểm chứng nguồn tin trên không gian số (SGK Hành trình CĐS Lớp 4)',
+            textbookLesson: 'Bài 3: Văn hóa chia sẻ và kiểm chứng nguồn tin trên không gian số',
+            textbookActivity: 'Hoạt động 2: Áp dụng bộ quy tắc 3 câu hỏi để nhận diện và ngăn chặn tin giả',
+            objective: 'Biết kiểm chứng độ xác thực của thông tin trước khi tin tưởng và không tiếp tay lan truyền thông tin sai lệch.',
+            situation: 'Khi đọc được một mẩu tin giật gân chưa được kiểm chứng trên mạng, em có nên vội vàng chia sẻ cho bạn bè cùng đọc không?',
+            studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 3 SGK Hành trình CĐS Lớp 4, em tuyệt đối không chia sẻ tin đồn thất thiệt mà phải đối chiếu với các nguồn tin chính thống của trường học và cơ quan báo chí."',
+            badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 4 - Bài 3: Kiểm chứng nguồn tin & Phòng chống tin giả (HĐ 2)]'
+          };
+        }
+        return {
+          title: 'Bài 4: Tự bảo vệ sức khỏe thể chất và tinh thần trong thời đại số (SGK Hành trình CĐS Lớp 4)',
+          textbookLesson: 'Bài 4: Tự bảo vệ sức khỏe thể chất và tinh thần trong thời đại số',
+          textbookActivity: 'Hoạt động 4: Thiết lập thời gian biểu sử dụng công nghệ số cân bằng và lành mạnh',
+          objective: 'Biết tự quản lý thời gian sử dụng thiết bị số, không thức khuya, duy trì thói quen vận động thể thao.',
+          situation: 'Làm thế nào để vừa hoàn thành tốt bài tập trên máy tính mà vẫn giữ gìn sức khỏe thể lực và tinh thần thoải mái?',
+          studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 4 - Bài 4 SGK Hành trình CĐS Lớp 4, em lập thời gian biểu khoa học: học trực tuyến tối đa 45 phút mỗi lần, kết hợp tập thể dục nhẹ nhàng và tham gia các hoạt động ngoại khóa ngoài trời."',
+          badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 4 - Bài 4: Cân bằng công nghệ & Sức khỏe số (HĐ 4)]'
+        };
+      }
+
+      // Grade 5
+      if (lower.includes('ai') || lower.includes('trí tuệ nhân tạo') || lower.includes('đạo đức') || lower.includes('bản quyền') || lower.includes('tác giả') || lower.includes('sao chép')) {
+        return {
+          title: 'Bài 2: Đạo đức học tập số, bản quyền tác giả và ứng dụng AI có trách nhiệm (SGK Hành trình CĐS Lớp 5)',
+          textbookLesson: 'Bài 2: Đạo đức học tập số, bản quyền tác giả và ứng dụng AI có trách nhiệm',
+          textbookActivity: 'Hoạt động 3: Sử dụng công cụ AI hỗ trợ học tập trung thực, trích dẫn nguồn tác giả đầy đủ',
+          objective: 'Hiểu và thực hành đạo đức trong học tập số; biết sử dụng công nghệ AI để gợi ý ý tưởng nhưng tự mình hoàn thành bài học, tôn trọng quyền sở hữu trí tuệ.',
+          situation: 'Khi sử dụng công cụ tìm kiếm hoặc công cụ AI để tìm ý tưởng làm bài thuyết trình, em cần làm gì để đảm bảo tính trung thực và đạo đức học tập?',
+          studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 3 - Bài 2 SGK Hành trình CĐS Lớp 5, em chỉ dùng công nghệ để tham khảo gợi ý, tự mình viết nội dung bài thuyết trình bằng ngôn ngữ cá nhân và ghi rõ nguồn gốc tài liệu tham khảo."',
+          badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 5 - Bài 2: Đạo đức học tập số & Ứng dụng AI có trách nhiệm (HĐ 3)]'
+        };
+      }
+      if (lower.includes('danh tính') || lower.includes('quyền riêng tư') || lower.includes('tài khoản') || lower.includes('bảo mật') || lower.includes('cài đặt')) {
+        return {
+          title: 'Bài 1: Quản lý danh tính số và thiết lập quyền riêng tư nâng cao (SGK Hành trình CĐS Lớp 5)',
+          textbookLesson: 'Bài 1: Quản lý danh tính số và thiết lập quyền riêng tư nâng cao',
+          textbookActivity: 'Hoạt động 2: Kiểm soát thông tin cá nhân và cài đặt chế độ bảo mật cho tài khoản học tập',
+          objective: 'Biết cách thiết lập quyền riêng tư cho hồ sơ trực tuyến, không công khai dữ liệu nhạy cảm cho người ngoài xem.',
+          situation: 'Khi tạo hồ sơ trên trang web học tập trực tuyến, em nên cài đặt chế độ xem thông tin cá nhân như thế nào?',
+          studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 1 SGK Hành trình CĐS Lớp 5, em chọn chế độ Chỉ bạn bè trong lớp hoặc Riêng tư, không chia sẻ ngày sinh, số điện thoại hay địa chỉ nhà cho công chúng."',
+          badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 5 - Bài 1: Quản lý danh tính số & Quyền riêng tư (HĐ 2)]'
+        };
+      }
+      if (lower.includes('bắt nạt') || lower.includes('bạo lực') || lower.includes('tẩy chay') || lower.includes('tin nhắn') || lower.includes('bảo vệ')) {
+        return {
+          title: 'Bài 3: Phòng chống bắt nạt trên không gian mạng (Cyberbullying) và kỹ năng tự bảo vệ (SGK Hành trình CĐS Lớp 5)',
+          textbookLesson: 'Bài 3: Phòng chống bắt nạt trên không gian mạng (Cyberbullying) và kỹ năng tự bảo vệ',
+          textbookActivity: 'Hoạt động 2: Kỹ năng ứng phó khi bị bắt nạt mạng và lên tiếng bảo vệ bạn bè',
+          objective: 'Biết lên án hành vi bắt nạt trực tuyến; đồng cảm, giúp đỡ bạn bè và báo cáo ngay cho ban giám hiệu/thầy cô khi phát hiện vụ việc.',
+          situation: 'Nếu nhìn thấy một nhóm bạn đang bình luận ác ý, xúc phạm hoặc chế giễu hình ảnh của một bạn cùng lớp trên mạng, em sẽ hành động như thế nào?',
+          studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 2 - Bài 3 SGK Hành trình CĐS Lớp 5, em không tham gia hay chia sẻ bài viết đó, chủ động an ủi bạn bị bắt nạt và lập tức báo với thầy cô giáo chủ nhiệm để can thiệp kịp thời."',
+          badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 5 - Bài 3: Phòng chống bắt nạt mạng & Bảo vệ bạn bè (HĐ 2)]'
+        };
+      }
+      return {
+        title: 'Bài 4: Giao dịch số an toàn và bảo mật thông tin thanh toán học đường (SGK Hành trình CĐS Lớp 5)',
+        textbookLesson: 'Bài 4: Giao dịch số an toàn và bảo mật thông tin thanh toán học đường',
+        textbookActivity: 'Hoạt động 3: Bảo mật mã OTP, thông tin thẻ thông minh và cẩn trọng khi thực hiện thao tác số',
+        objective: 'Nhận biết các rủi ro liên quan đến giao dịch số và bảo mật thông tin tài chính học đường.',
+        situation: 'Khi sử dụng thẻ thư viện thông minh hoặc tài khoản học tập, em cần lưu ý những điều gì để tránh bị kẻ xấu lợi dụng?',
+        studentSolution: 'HS trả lời: "Thưa thầy/cô, theo Hoạt động 3 - Bài 4 SGK Hành trình CĐS Lớp 5, em giữ gìn thẻ cẩn thận, không cung cấp mã OTP/mật khẩu cho bất kỳ ai và luôn đăng xuất sau khi sử dụng tại các máy tính công cộng."',
+        badge: '[CÔNG DÂN SỐ - CV 3899 & SGK Hành trình CĐS Lớp 5 - Bài 4: Giao dịch số an toàn & Bảo mật thông tin (HĐ 3)]'
+      };
+    };
+
+    const currentCds = getCdsIntegrationInfo(validGradeKey, cleanTopic);
+
     const specificCompetencies = isPeriod1
       ? [
           `Nhận biết và nêu được các khái niệm, biểu hiện cơ bản liên quan đến "${cleanTopic}".`,
-          `Nêu được ví dụ minh họa và thực hiện các thao tác quan sát, tìm hiểu theo yêu cầu bài học trong SGK${fileName ? ` (bám sát tài liệu: ${fileName})` : ''}.`
+          `Nêu được ví dụ minh họa và thực hiện các thao tác quan sát, tìm hiểu theo yêu cầu bài học trong SGK (quan sát các hình ảnh trong SGK mục 1 và mục 2).`
         ]
       : [
           `Vận dụng kiến thức bài học để giải quyết bài tập và tình huống thực hành nâng cao.`,
@@ -149,17 +437,17 @@ function buildStandardLessonPlan(params: {
     const integrationContent = [];
     if (enableNls) {
       integrationContent.push(
-        `[1.3.${nlsLevel}a]: Học sinh xác định, tìm kiếm và truy xuất thông tin bài học trên thiết bị học tập an toàn, hiệu quả.`
+        `[1.3.${nlsLevel}a - Khung NLS chuẩn CV 3456]: Học sinh xác định, tìm kiếm và truy xuất thông tin bài học trên thiết bị học tập an toàn, hiệu quả.`
       );
     }
     if (enableStem) {
       integrationContent.push(
-        `[STEM]: Học sinh vận dụng kiến thức liên môn (${subject}, Khoa học, Toán) để lập kế hoạch và giải quyết tình huống bài học.`
+        `[BÀI HỌC STEM - THEO CV 909/BGDĐT-GDTH]: ${currentStem.title} - Học sinh vận dụng kiến thức liên môn (${subject}, Khoa học, Toán, Mĩ thuật, Công nghệ) để thiết kế, chế tạo và thử nghiệm sản phẩm thực tế.`
       );
     }
     if (enableCds) {
       integrationContent.push(
-        `[Tích hợp HĐGD - CV 3899 - Bài ${Math.min(numericGrade, 5)} SGK Hành trình công dân số Lớp ${numericGrade}]: Học sinh rèn luyện kỹ năng ứng xử văn minh, bảo vệ thông tin cá nhân và an toàn trên môi trường số.`
+        `[TÍCH HỢP CÔNG DÂN SỐ - Theo CV 3899/BGDĐT-GDTH & SGK Hành trình CĐS Lớp ${numericGrade} - ${currentCds.textbookLesson}]: ${currentCds.objective}`
       );
     }
 
@@ -168,16 +456,31 @@ function buildStandardLessonPlan(params: {
       {
         activityNumber: 1,
         activityName: '1. Khởi động (khoảng 5 phút)',
+        timeEstimate: 'Khoảng 5 phút',
+        integrationNote: enableStem
+          ? `[STEM - Pha 1: Xác định vấn đề thực tiễn & Tiêu chí sản phẩm STEM - ${currentStem.title}]`
+          : enableNls
+          ? `[TÍCH HỢP NĂNG LỰC SỐ (CV 3456 - Mã 1.3.${nlsLevel}a)]: Sử dụng phần mềm trình chiếu và hình ảnh trực quan để khơi gợi hứng thú số`
+          : undefined,
         tasks: [
           {
             taskId: `task-${p}-1-1`,
             taskTitle: `* Nhiệm vụ 1: Tham gia trò chơi khởi động "${isPeriod1 ? 'Mảnh ghép thông minh' : 'Ai nhanh ai đúng'}"`,
+            integrationNote: enableStem
+              ? `[STEM]: GV đặt ra bài toán thách thức "${currentStem.problem}"`
+              : enableNls
+              ? `[1.3.${nlsLevel}a]: HS quan sát và nhận biết thông tin từ màn hình kỹ thuật số`
+              : undefined,
             steps: [
               {
                 stepNumber: 1,
                 stepName: 'Bước 1: Chuyển giao nhiệm vụ',
-                teacherAction: 'GV trình chiếu câu hỏi khởi động trên màn hình, phổ biến luật chơi và yêu cầu học sinh quan sát suy nghĩ.',
-                studentAction: 'HS chú ý quan sát lên bảng/màn hình tivi, lắng nghe hiệu lệnh của giáo viên.'
+                teacherAction: enableStem
+                  ? `GV trình chiếu video/tình huống thực tiễn mở đầu cho bài học STEM: "${currentStem.problem}". GV nêu rõ các tiêu chí sản phẩm cần đạt: "${currentStem.criteria}".`
+                  : 'GV trình chiếu câu hỏi khởi động trên màn hình tivi/máy chiếu, phổ biến luật chơi và yêu cầu học sinh quan sát suy nghĩ.',
+                studentAction: enableStem
+                  ? 'HS chú ý theo dõi video/tình huống, tiếp nhận thử thách STEM và ghi nhận các tiêu chí chất lượng của sản phẩm.'
+                  : 'HS chú ý quan sát lên bảng/màn hình tivi, lắng nghe hiệu lệnh của giáo viên.'
               },
               {
                 stepNumber: 2,
@@ -206,22 +509,33 @@ function buildStandardLessonPlan(params: {
       {
         activityNumber: 2,
         activityName: '2. Hình thành kiến thức mới (khoảng 15 phút)',
+        timeEstimate: 'Khoảng 15 phút',
+        integrationNote: enableStem
+          ? `[STEM - Pha 2: Nghiên cứu kiến thức nền & Đề xuất giải pháp thiết kế - ${currentStem.title}]`
+          : enableNls
+          ? `[TÍCH HỢP NĂNG LỰC SỐ (CV 3456 - Mã 1.3.${nlsLevel}a & 2.1.${nlsLevel}b)]: Khai thác phần mềm và thiết bị số để tìm kiếm, thu thập thông tin bài học`
+          : undefined,
         tasks: [
           {
             taskId: `task-${p}-2-1`,
             taskTitle: `* Nhiệm vụ 1: Quan sát tranh và khám phá nội dung phần ${isPeriod1 ? '1' : '3'} trong SGK`,
+            integrationNote: enableStem
+              ? `[STEM - Khám phá kiến thức nền]: Khai thác kiến thức SGK ${subject} Lớp ${numericGrade} và phác thảo bản vẽ`
+              : enableNls
+              ? `[1.3.${nlsLevel}a]: HS tra cứu và xác định thông tin chính xác trên thiết bị học tập`
+              : undefined,
             steps: [
               {
                 stepNumber: 1,
                 stepName: 'Bước 1: Chuyển giao nhiệm vụ',
-                teacherAction: `GV yêu cầu học sinh làm việc theo cặp đôi, đọc thông tin và quan sát hình ảnh trong SGK mục ${isPeriod1 ? '1' : '3'}${fileName ? ` (Tài liệu: ${fileName})` : ''}.`,
-                studentAction: 'HS mở SGK, cùng bạn cùng bàn đọc thầm thông tin và quan sát các chi tiết trong hình.'
+                teacherAction: `GV yêu cầu học sinh làm việc theo cặp đôi, đọc thông tin và quan sát Hình 1, Hình 2 trong SGK trang 8 (mục ${isPeriod1 ? '1' : '3'}). GV hướng dẫn học sinh cách tra cứu thông tin số trên sơ đồ trực quan.`,
+                studentAction: 'HS mở SGK, cùng bạn cùng bàn đọc thầm thông tin và quan sát các chi tiết trong hình số.'
               },
               {
                 stepNumber: 2,
                 stepName: 'Bước 2: Thực hiện nhiệm vụ',
-                teacherAction: `GV đặt câu hỏi gợi mở: 'Qua quan sát, em hãy chỉ ra điểm giống và khác nhau?' GV bao quát lớp và hỗ trợ các nhóm.`,
-                studentAction: `HS thảo luận sôi nổi: [1.3.${nlsLevel}a: HS tra cứu và chỉ ra thông tin tương ứng trên màn hình tương tác].`
+                teacherAction: `GV đặt câu hỏi gợi mở: 'Qua quan sát, em hãy chỉ ra điểm giống và khác nhau?' GV bao quát lớp và hỗ trợ các nhóm ứng dụng công nghệ để phân tích.`,
+                studentAction: `HS thảo luận sôi nổi: [1.3.${nlsLevel}a: HS tra cứu và chỉ ra thông tin tương ứng trên sơ đồ/màn hình tương tác].`
               },
               {
                 stepNumber: 3,
@@ -240,12 +554,17 @@ function buildStandardLessonPlan(params: {
           {
             taskId: `task-${p}-2-2`,
             taskTitle: '* Nhiệm vụ 2: Phân tích ví dụ thực tế và rút ra quy tắc bài học',
+            integrationNote: enableStem ? `[STEM - Đề xuất giải pháp]: Lựa chọn vật liệu (${currentStem.material}) và phác thảo phương án` : undefined,
             steps: [
               {
                 stepNumber: 1,
                 stepName: 'Bước 1: Chuyển giao nhiệm vụ',
-                teacherAction: 'GV nêu tình huống thực tế minh họa và yêu cầu học sinh trao đổi theo nhóm 4.',
-                studentAction: 'HS tiếp nhận nhiệm vụ, quay lại tạo nhóm 4 để bắt đầu thảo luận.'
+                teacherAction: enableStem
+                  ? `GV yêu cầu các nhóm lựa chọn vật liệu (${currentStem.material}) và vẽ phác thảo mô hình sản phẩm vào phiếu học tập STEM.`
+                  : 'GV nêu tình huống thực tế minh họa và yêu cầu học sinh trao đổi theo nhóm 4, phân tích dữ liệu và sơ đồ.',
+                studentAction: enableStem
+                  ? 'HS làm việc nhóm 4, phân công thành viên phác thảo bản vẽ và ghi chú kích thước từng bộ phận.'
+                  : 'HS tiếp nhận nhiệm vụ, quay lại tạo nhóm 4 để bắt đầu thảo luận.'
               },
               {
                 stepNumber: 2,
@@ -274,15 +593,22 @@ function buildStandardLessonPlan(params: {
       {
         activityNumber: 3,
         activityName: '3. Luyện tập, thực hành (khoảng 10 phút)',
+        timeEstimate: 'Khoảng 10 phút',
+        integrationNote: enableStem
+          ? `[STEM - Pha 3: Lựa chọn vật liệu, Chế tạo mẫu & Thử nghiệm thực tế - ${currentStem.title}]`
+          : enableNls
+          ? `[TÍCH HỢP NĂNG LỰC SỐ (CV 3456 - Mã 4.1.${nlsLevel}a)]: Thực hành thao tác chuẩn xác, bảo đảm an toàn thiết bị số và dữ liệu`
+          : undefined,
         tasks: [
           {
             taskId: `task-${p}-3-1`,
             taskTitle: `* Nhiệm vụ 1: Giải bài tập 1 trang SGK (${isPeriod1 ? 'Nhận biết, củng cố' : 'Thực hành thao tác'})`,
+            integrationNote: enableNls ? `[4.1.${nlsLevel}a]: HS tuân thủ quy tắc bảo đảm an toàn thiết bị khi thực hành` : undefined,
             steps: [
               {
                 stepNumber: 1,
                 stepName: 'Bước 1: Chuyển giao nhiệm vụ',
-                teacherAction: 'GV yêu cầu 1 học sinh đọc to đề Bài tập 1 trong SGK, giao nhiệm vụ làm việc cá nhân vào vở / bảng con.',
+                teacherAction: 'GV yêu cầu 1 học sinh đọc to đề Bài tập 1 trong SGK, giao nhiệm vụ làm việc cá nhân vào vở / bảng con / phần mềm luyện tập.',
                 studentAction: '1 HS đọc to đề bài, cả lớp lắng nghe và mở vở bài tập.'
               },
               {
@@ -308,12 +634,17 @@ function buildStandardLessonPlan(params: {
           {
             taskId: `task-${p}-3-2`,
             taskTitle: '* Nhiệm vụ 2: Hoàn thành bài tập 2 thực hành nâng cao',
+            integrationNote: enableStem ? `[STEM - Chế tạo & Thử nghiệm]: Lắp ráp mô hình và kiểm chứng tiêu chí (${currentStem.criteria})` : undefined,
             steps: [
               {
                 stepNumber: 1,
                 stepName: 'Bước 1: Chuyển giao nhiệm vụ',
-                teacherAction: 'GV giao bài tập 2 làm theo nhóm đôi, yêu cầu các em kiểm tra chéo kết quả cho nhau.',
-                studentAction: 'HS nhận đề bài tập 2, quay sang bạn cùng bàn để bắt đầu thực hiện.'
+                teacherAction: enableStem
+                  ? `GV phát bộ dụng cụ thực hành (${currentStem.material}), nhắc nhở an toàn và yêu cầu các nhóm tiến hành lắp ráp, đo kiểm theo tiêu chí: "${currentStem.criteria}".`
+                  : 'GV giao bài tập 2 làm theo nhóm đôi, yêu cầu các em kiểm tra chéo kết quả cho nhau và ghi nhận các dữ liệu thử nghiệm.',
+                studentAction: enableStem
+                  ? 'HS nhận vật liệu, phối hợp phân công cắt dán, lắp ráp và tiến hành đo đạc thử nghiệm sản phẩm.'
+                  : 'HS nhận đề bài tập 2, quay sang bạn cùng bàn để bắt đầu thực hiện.'
               },
               {
                 stepNumber: 2,
@@ -342,34 +673,81 @@ function buildStandardLessonPlan(params: {
       {
         activityNumber: 4,
         activityName: '4. Vận dụng, trải nghiệm (khoảng 5 phút)',
+        timeEstimate: 'Khoảng 5 phút',
+        integrationNote: enableStem
+          ? `[STEM - Pha 4: Trưng bày, Đánh giá chất lượng & Cải tiến sản phẩm - ${currentStem.title}]`
+          : enableCds
+          ? `[TÍCH HỢP CÔNG DÂN SỐ (CV 3899 & SGK Hành trình CĐS Lớp ${numericGrade}) - ${currentCds.textbookLesson}]: ${currentCds.textbookActivity}`
+          : undefined,
         tasks: [
           {
             taskId: `task-${p}-4-1`,
-            taskTitle: '* Nhiệm vụ 1: Vận dụng kiến thức vào thực tế cuộc sống hàng ngày',
+            taskTitle: enableStem
+              ? `* Nhiệm vụ 1: Trưng bày sản phẩm "${currentStem.title}" và đề xuất ý tưởng cải tiến`
+              : enableCds
+              ? `* Nhiệm vụ 1: Vận dụng kỹ năng công dân số - Xử lý tình huống thực tế theo ${currentCds.textbookLesson}`
+              : '* Nhiệm vụ 1: Vận dụng kiến thức vào thực tế cuộc sống hàng ngày',
+            integrationNote: enableStem
+              ? `[STEM - Đánh giá & Cải tiến]: Thuyết minh nguyên lý và đề xuất nâng cấp sản phẩm`
+              : enableCds
+              ? `${currentCds.badge}`
+              : undefined,
             steps: [
               {
                 stepNumber: 1,
                 stepName: 'Bước 1: Chuyển giao nhiệm vụ',
-                teacherAction: "GV đưa ra câu hỏi tình huống gắn liền với đời sống học sinh: 'Em sẽ làm gì khi gặp tình huống...?'",
-                studentAction: 'HS lắng nghe câu hỏi tình huống và liên hệ với thực tế của bản thân.'
+                teacherAction: enableStem
+                  ? `GV yêu cầu các nhóm trưng bày sản phẩm STEM lên bàn triển lãm, cử đại diện thuyết minh về nguyên lý hoạt động và cách cải tiến.`
+                  : enableCds
+                  ? `GV đưa ra câu hỏi tình huống trích từ ${currentCds.textbookActivity} (${currentCds.textbookLesson}): "${currentCds.situation}"`
+                  : `GV đưa ra câu hỏi tình huống gắn liền với đời sống học sinh: 'Em sẽ làm gì khi gặp tình huống thực tế liên quan đến ${cleanTopic}?'`,
+                studentAction: enableStem
+                  ? 'HS mang sản phẩm của nhóm lên khu vực trưng bày, chuẩn bị bài thuyết minh ngắn trong 1 phút.'
+                  : enableCds
+                  ? `HS lắng nghe tình huống trích từ SGK Hành trình CĐS Lớp ${numericGrade}, suy nghĩ cách xử lý theo chuẩn mực công dân số.`
+                  : 'HS lắng nghe câu hỏi tình huống và liên hệ với thực tế của bản thân.'
               },
               {
                 stepNumber: 2,
                 stepName: 'Bước 2: Thực hiện nhiệm vụ',
-                teacherAction: `GV khuyến khích học sinh suy nghĩ nhanh và chia sẻ cách xử lý an toàn, thông minh: "[Tích hợp HĐGD - Bài ${Math.min(numericGrade, 5)} Hành trình công dân số: Ứng xử an toàn, văn minh]".`,
-                studentAction: 'HS tự suy ngẫm và chuẩn bị câu trả lời ngắn gọn, thiết thực.'
+                teacherAction: enableStem
+                  ? `GV tổ chức cho các nhóm quan sát chéo và chấm điểm theo phiếu tiêu chí chất lượng: "${currentStem.criteria}".`
+                  : enableCds
+                  ? `GV khuyến khích học sinh trao đổi cặp đôi, liên hệ bài học và các quy tắc trong ${currentCds.textbookLesson} để tìm giải pháp chuẩn mực.`
+                  : `GV khuyến khích học sinh suy nghĩ nhanh và chia sẻ cách xử lý thông minh, sáng tạo.`,
+                studentAction: enableStem
+                  ? 'HS đại diện nhóm thuyết minh: "Thưa thầy cô và các bạn, mô hình của nhóm em hoạt động dựa trên nguyên lý... Để sản phẩm bền và đẹp hơn, nhóm em dự kiến sẽ cải tiến thêm..."'
+                  : enableCds
+                  ? `${currentCds.studentSolution}`
+                  : 'HS tự suy ngẫm và chuẩn bị câu trả lời ngắn gọn, thiết thực.'
               },
               {
                 stepNumber: 3,
                 stepName: 'Bước 3: Báo cáo kết quả',
-                teacherAction: 'GV mời 2 học sinh phát biểu giải pháp trước lớp.',
-                studentAction: "HS chia sẻ: 'Thưa thầy/cô, trong thực tế em sẽ áp dụng bằng cách...'"
+                teacherAction: enableStem
+                  ? 'GV mời đại diện 2 nhóm thuyết minh và cho các nhóm còn lại nhận xét.'
+                  : enableCds
+                  ? 'GV mời 2 học sinh phát biểu câu trả lời xử lý tình huống trước lớp; cả lớp lắng nghe và nhận xét.'
+                  : 'GV mời 2 học sinh phát biểu giải pháp trước lớp.',
+                studentAction: enableStem
+                  ? 'Các nhóm lắng nghe nhận xét, ghi nhận phiếu đánh giá đồng đẳng từ nhóm bạn.'
+                  : enableCds
+                  ? `HS tự tin phát biểu giải pháp xử lý tình huống theo đúng tinh thần ${currentCds.textbookLesson}.`
+                  : "HS chia sẻ: 'Thưa thầy/cô, trong thực tế em sẽ áp dụng bằng cách...'"
               },
               {
                 stepNumber: 4,
                 stepName: 'Bước 4: Đánh giá, kết luận',
-                teacherAction: 'GV tổng kết tiết học, khen ngợi tinh thần học tập, dặn dò học sinh ôn bài và chuẩn bị tiết tiếp theo.',
-                studentAction: 'HS lắng nghe lời dặn của thầy/cô, thu dọn đồ dùng học tập ngay ngắn.'
+                teacherAction: enableStem
+                  ? `GV tổng kết, biểu dương sản phẩm xuất sắc của các nhóm và dặn dò học sinh bảo quản sản phẩm tại góc STEM lớp học.`
+                  : enableCds
+                  ? `GV nhận xét, chuẩn hóa quy tắc công dân số theo ${currentCds.textbookLesson}, khen ngợi tinh thần học tập và dặn dò học sinh luôn thực hiện đúng trong thực tế.`
+                  : 'GV tổng kết tiết học, khen ngợi tinh thần học tập, dặn dò học sinh ôn bài và chuẩn bị tiết tiếp theo.',
+                studentAction: enableStem
+                  ? 'HS vỗ tay khen thưởng, cất gọn dụng cụ học tập và bảo quản mô hình cẩn thận.'
+                  : enableCds
+                  ? 'HS ghi nhớ bài học kỹ năng công dân số và thu dọn đồ dùng học tập ngay ngắn.'
+                  : 'HS lắng nghe lời dặn của thầy/cô, thu dọn đồ dùng học tập ngay ngắn.'
               }
             ]
           }
@@ -419,14 +797,22 @@ function buildStandardLessonPlan(params: {
   };
 }
 
-// 0. API Nhận diện tự động tên bài học, môn, lớp từ hình ảnh tài liệu/trang sách
+// 0. API Nhận diện tự động tên bài học, môn, lớp từ hình ảnh tài liệu/trang sách (hỗ trợ nhiều hình ảnh cùng lúc)
 app.post('/api/gemini/analyze-lesson-file', async (req, res) => {
   try {
-    const { base64Data, mimeType, fileName, customApiKey } = req.body;
+    const { base64Data, mimeType, fileName, attachedFiles, customApiKey } = req.body;
     const customKey = (req.headers['x-gemini-api-key'] as string) || customApiKey;
 
+    const filesList: Array<{ base64Data?: string; mimeType?: string; fileName?: string }> = [];
+    if (Array.isArray(attachedFiles) && attachedFiles.length > 0) {
+      filesList.push(...attachedFiles);
+    } else if (base64Data) {
+      filesList.push({ base64Data, mimeType, fileName });
+    }
+
     // Fallback info extracted from fileName if present
-    const cleanedFileName = (fileName || 'Bài học mới')
+    const mainFileName = filesList[0]?.fileName || fileName || 'Bài học mới';
+    const cleanedFileName = mainFileName
       .replace(/\.[^/.]+$/, '')
       .replace(/[-_]/g, ' ')
       .trim();
@@ -434,7 +820,7 @@ app.post('/api/gemini/analyze-lesson-file', async (req, res) => {
       ? cleanedFileName
       : `Bài: ${cleanedFileName}`;
 
-    if (!base64Data) {
+    if (filesList.length === 0) {
       return res.json({
         success: true,
         topic: fallbackTopic,
@@ -445,15 +831,13 @@ app.post('/api/gemini/analyze-lesson-file', async (req, res) => {
       });
     }
 
-    const isPdf = mimeType === 'application/pdf' || fileName?.toLowerCase().endsWith('.pdf');
-
-    const prompt = `Bạn là chuyên gia giáo dục Việt Nam. Hãy quan sát và phân tích hình ảnh/tài liệu giáo dục này.
+    const prompt = `Bạn là chuyên gia giáo dục Việt Nam. Hãy quan sát và phân tích các hình ảnh/trang sách tài liệu giáo dục này.
 Hãy trích xuất chính xác:
 1. "topic": Tên bài học đầy đủ (Ví dụ: "Bài 1. Thông tin và quyết định", "Bài 15. Bảng nhân 7", "Bài 3. Máy tính và em"... Lưu ý: bắt đầu bằng "Bài X. Tên bài").
 2. "subject": Môn học (Ví dụ: "Tin học", "Toán", "Tiếng Việt", "Tự nhiên và Xã hội", "Khoa học", "Lịch sử và Địa lí", "Công nghệ"...).
 3. "grade": Khối lớp dạng số chuỗi (Ví dụ: "3", "4", "5"...).
 4. "bookSeries": Bộ sách nếu nhận diện được (Ví dụ: "Kết nối tri thức với cuộc sống", "Cánh Diều", "Chân trời sáng tạo"... Nếu không rõ thì để "Kết nối tri thức với cuộc sống").
-5. "summary": Tóm tắt các hoạt động chính, bài tập hoặc nội dung cốt lõi của bài học trong tài liệu này.
+5. "summary": Tóm tắt các hoạt động chính, bài tập hoặc nội dung cốt lõi của bài học trong các hình ảnh này.
 
 Trả về DUY NHẤT một đối tượng JSON hợp lệ (không bọc trong markdown code fence):
 {
@@ -464,35 +848,28 @@ Trả về DUY NHẤT một đối tượng JSON hợp lệ (không bọc trong 
   "summary": "Tóm tắt nội dung..."
 }`;
 
-    const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
-
-    const contents = [
-      {
-        role: 'user',
-        parts: [
-          {
-            inlineData: {
-              data: cleanBase64,
-              mimeType: mimeType || (isPdf ? 'application/pdf' : 'image/jpeg')
-            }
-          },
-          {
-            text: prompt
+    const parts: any[] = [];
+    for (const f of filesList) {
+      const raw = f.base64Data || '';
+      if (raw) {
+        const cleanBase64 = raw.replace(/^data:[^;]+;base64,/, '');
+        const isPdf = f.mimeType === 'application/pdf' || f.fileName?.toLowerCase().endsWith('.pdf');
+        parts.push({
+          inlineData: {
+            data: cleanBase64,
+            mimeType: f.mimeType || (isPdf ? 'application/pdf' : 'image/jpeg')
           }
-        ]
+        });
       }
-    ];
+    }
+    parts.push({ text: prompt });
 
-    const rawText = await generateWithGemini(contents, customKey);
+    const contents = [{ role: 'user', parts }];
+    const rawText = await generateWithGemini(contents, customKey, { responseMimeType: 'application/json' });
 
-    if (rawText) {
-      const cleaned = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-      try {
-        const result = JSON.parse(cleaned);
-        return res.json({ success: true, ...result });
-      } catch (parseErr) {
-        console.warn('Could not parse AI response JSON for file analysis:', cleaned);
-      }
+    const result = safeParseJSON(rawText);
+    if (result && typeof result === 'object') {
+      return res.json({ success: true, ...result });
     }
 
     // Return graceful fallback
@@ -501,7 +878,7 @@ Trả về DUY NHẤT một đối tượng JSON hợp lệ (không bọc trong 
       topic: fallbackTopic,
       subject: 'Tin học',
       grade: '3',
-      bookSeries: 'Kết nối tri thức với cuộc sống',
+      bookSeries: 'GDPT 2018',
       summary: cleanedFileName
     });
   } catch (err: any) {
@@ -511,7 +888,7 @@ Trả về DUY NHẤT một đối tượng JSON hợp lệ (không bọc trong 
       topic: 'Bài 1. Thông tin và quyết định',
       subject: 'Tin học',
       grade: '3',
-      bookSeries: 'Kết nối tri thức với cuộc sống',
+      bookSeries: 'GDPT 2018',
       summary: 'Phân tích tài liệu bài học'
     });
   }
@@ -635,14 +1012,106 @@ app.post('/api/gemini/generate-lesson-plan', async (req, res) => {
     // Clean topic name from redundant prefixes if any
     const cleanTopic = topic.replace(/^Bài\s*:\s*/i, '').replace(/^Bài\s+\d+[:\.]\s*/i, (m: string) => m.replace(':', '.'));
 
-    const prompt = `Bạn là một chuyên gia giáo dục Việt Nam. Nhiệm vụ của bạn là soạn Kế hoạch bài dạy (Giáo án) CHUẨN KHOA HỌC, TUYỆT ĐỐI THEO MẪU BẮT BUỘC VÀ ĐÚNG CẤU TRÚC.
-${attachedFile ? 'LƯU Ý ĐẶC BIỆT: Người dùng có đính kèm tệp tài liệu/trang sách/PDF. Bạn PHẢI bám sát tuyệt đối nội dung, bài tập, câu hỏi, hình vẽ, ví dụ và hoạt động có trong tài liệu/hình ảnh đính kèm này để soạn giáo án.' : ''}
+    const prompt = `Bạn là một chuyên gia giáo dục xuất sắc tại Việt Nam. Nhiệm vụ của bạn là SOẠN KẾ HOẠCH BÀI DẠY (GIÁO ÁN) CỰC KỲ CHI TIẾT, ĐẦY ĐỦ, CHUẨN KHOA HỌC VÀ BÁM SÁT SGK.
 
-Bài học: "${topic}"
-Môn: ${subject}
-Lớp: ${grade}
-Bộ sách: ${bookSeries}
-Tổng số tiết: ${totalPeriods} tiết.
+Ý ĐỊNH CỦA GIÁO VIÊN: "AI kiểm tra nội dung bài dạy thật kĩ sau đó tiến hành phân tích dữ liệu để soạn nội dung thật chi tiết cho bài dạy, càng nhiều nội dung thì học sinh dễ hiểu và giải quyết đầy đủ các vấn đề. Bám sát vào nội dung SGK".
+
+${(attachedFile || (Array.isArray(req.body.attachedFiles) && req.body.attachedFiles.length > 0)) ? 'LƯU Ý BẮT BUỘC KHI CÓ HÌNH ẢNH/TỆP ĐÍNH KÈM: Người dùng đã đính kèm tệp tài liệu/trang sách/PDF. Bạn PHẢI trích xuất và phân tích sâu toàn bộ kiến thức, hình vẽ, câu hỏi, bài tập, ví dụ và hoạt động có trong tài liệu này để đưa vào giáo án.' : ''}
+
+Thông tin bài dạy:
+- Tên bài dạy / chủ đề: "${topic}"
+- Môn học: ${subject}
+- Khối lớp: Lớp ${grade}
+- Bộ sách: ${bookSeries}
+- Tổng số tiết: ${totalPeriods} tiết.
+- Tùy chọn tích hợp chuyên đề: Năng lực số=${integrationOptions?.nls ? 'CÓ' : 'KHÔNG'}, STEM=${integrationOptions?.stem ? 'CÓ' : 'KHÔNG'}, Công dân số=${integrationOptions?.cds ? 'CÓ' : 'KHÔNG'}.
+
+QUY ĐỊNH BẮT BUỘC VỀ RÀ SOÁT VÀ TÍCH HỢP CHUYÊN ĐỀ VÀO TỪNG HOẠT ĐỘNG (QUAN TRỌNG HÀNG ĐẦU):
+Khi người dùng chọn tích hợp các nội dung chuyên đề (Năng lực số theo CV 3456 & TT 02/2025, Giáo dục STEM theo CV 909/BGDĐT, Công dân số theo CV 3899 & SGK Hành trình CĐS):
+
+★ YÊU CẦU ĐẶC BIỆT CỦA GIÁO VIÊN: "PHẢI LẤY NỘI DUNG TÍCH HỢP CỦA SGK CẦN TÍCH HỢP ĐỂ ĐƯA VÀO".
+Bạn PHẢI tra cứu và trích xuất đúng nội dung kiến thức, tên bài học, tình huống thực tế và bài tập từ cuốn SGK của môn/chuyên đề cần tích hợp tương ứng với Khối ${grade}:
+
+1. TÍCH HỢP CÔNG DÂN SỐ (THEO CV 3899/BGDĐT-GDTH & SGK "HÀNH TRÌNH CÔNG DÂN SỐ LỚP ${grade}"):
+   - TỰ ĐỘNG NHẬN DẠNG BÀI VÀ HOẠT ĐỘNG PHÙ HỢP TỪ SGK HÀNH TRÌNH CÔNG DÂN SỐ LỚP ${grade}:
+     * Lớp 1:
+       + Bài 1: Làm quen và giữ gìn thiết bị số an toàn (HĐ 2: Nhận diện và bảo quản thiết bị học tập, không để nước hay đồ ăn gần máy tính).
+       + Bài 2: Tư thế ngồi chuẩn và bảo vệ mắt khi dùng thiết bị số (HĐ 3: Giữ khoảng cách mắt 50-70cm, quy tắc nghỉ mắt sau 20 phút).
+       + Bài 3: Giao tiếp lễ phép trong môi trường số (HĐ 2: Lễ phép xin phép cha mẹ/thầy cô trước khi dùng thiết bị).
+     * Lớp 2:
+       + Bài 1: Bảo vệ thông tin cá nhân trên môi trường số (HĐ 2: Giữ bí mật họ tên, địa chỉ, số điện thoại, mật khẩu trước người lạ).
+       + Bài 2: Nhận biết đường link lạ và phòng tránh nguy cơ (HĐ 3: Cảnh giác trước thông báo trúng thưởng/kết bạn lạ).
+       + Bài 3: Lời nói đẹp và ứng xử văn minh trong môi trường số (HĐ 2: Giao tiếp lịch sự, nói lời hay trên nhóm học tập).
+     * Lớp 3:
+       + Bài 1: Tìm kiếm thông tin học tập an toàn với từ khóa chuẩn (HĐ 2: Dùng từ khóa chuẩn xác, truy cập trang web giáo dục uy tín).
+       + Bài 2: Mật khẩu an toàn - Chìa khóa bảo vệ dữ liệu (HĐ 3: Quy tắc đặt mật khẩu mạnh, không chia sẻ tài khoản cho người khác).
+       + Bài 3: Tôn trọng quyền tác giả và bản quyền hình ảnh số (HĐ 2: Ghi rõ nguồn gốc tác giả khi sử dụng tài liệu mạng).
+       + Bài 4: Phòng tránh nguy cơ và báo cáo an toàn mạng (HĐ 3: Kỹ năng từ chối tin nhắn xấu và báo ngay cho người lớn).
+     * Lớp 4:
+       + Bài 1: Dấu chân kỹ thuật số (Digital Footprint) và trách nhiệm công dân số (HĐ 2: Nhận thức mọi bài đăng đều lưu vết tích số vĩnh viễn).
+       + Bài 2: Phòng chống mã độc, lừa đảo trực tuyến và bảo vệ thiết bị (HĐ 3: Kiểm tra tệp tin an toàn trước khi tải về).
+       + Bài 3: Văn hóa chia sẻ và kiểm chứng nguồn tin trên không gian số (HĐ 2: Áp dụng bộ 3 câu hỏi kiểm chứng để ngăn tin giả).
+       + Bài 4: Tự bảo vệ sức khỏe và cân bằng thời gian số (HĐ 4: Lập thời gian biểu số lành mạnh, tránh lạm dụng màn hình).
+     * Lớp 5:
+       + Bài 1: Quản lý danh tính số và quyền riêng tư nâng cao (HĐ 2: Cài đặt chế độ bảo mật cho tài khoản học tập).
+       + Bài 2: Đạo đức học tập số, bản quyền tác giả và ứng dụng AI có trách nhiệm (HĐ 3: Sử dụng AI trung thực, không gian lận, ghi rõ nguồn trích dẫn).
+       + Bài 3: Phòng chống bắt nạt mạng (Cyberbullying) và kỹ năng tự bảo vệ (HĐ 2: Lên tiếng bảo vệ bạn bè, không tiếp tay cho bạo lực mạng).
+       + Bài 4: Giao dịch số an toàn và bảo mật thông tin tài chính học đường (HĐ 3: Bảo mật mã OTP, thẻ thông minh).
+   - BẮT BUỘC THỂ HIỆN RÕ RÀNG TRONG GIÁO ÁN ĐỂ NGƯỜI KIỂM TRA THẤY NGAY:
+     * Tại Mục I.4 (Nội dung tích hợp): Ghi rõ "[TÍCH HỢP CÔNG DÂN SỐ - Theo CV 3899 & SGK Hành trình CĐS Lớp ${grade} - Bài X: [Tên bài] (Hoạt động Y: [Tên HĐ])]: [Mục tiêu kỹ năng số cần đạt]".
+     * Tại Hoạt động 4 (Vận dụng) hoặc Hoạt động 2/3:
+       + "integrationNote": "[TÍCH HỢP CÔNG DÂN SỐ (CV 3899 & SGK Hành trình CĐS Lớp ${grade}) - Bài X: [Tên bài]]: Hoạt động Y: [Tên HĐ]".
+       + "teacherAction": GV đưa ra câu hỏi tình huống thực tế trích từ Hoạt động Y của SGK Hành trình CĐS Lớp ${grade}.
+       + "studentAction": HS trả lời chuẩn xác theo các quy tắc công dân số (giữ bí mật mật khẩu, xin phép người lớn, trích dẫn nguồn, từ chối link lạ...).
+
+2. TÍCH HỢP NĂNG LỰC SỐ (THEO KHUNG NLS CV 3456 & TT 02/2025/TT-BGDĐT):
+   - CẤU TRÚC KÝ HIỆU CHUẨN MÃ CHỈ BÁO NĂNG LỰC SỐ (BẮT BUỘC):
+     Cấu trúc: [X.Y.CB{1|2}{a|b|c|d}]
+     Trong đó:
+     * X.Y: Miền và Năng lực thành phần (1.1: Duyệt/tìm kiếm; 1.2: Đánh giá; 1.3: Quản lý dữ liệu; 2.1: Tương tác số; 2.2: Chia sẻ; 2.3: Trách nhiệm công dân; 2.4: Hợp tác số; 2.5: Quy tắc ứng xử mạng Netiquette; 2.6: Quản lý danh tính số; 3.1: Phát triển nội dung số; 3.2: Tái tạo nội dung; 3.3: Bản quyền & giấy phép; 3.4: Lập trình & tư duy thuật toán; 4.1: Bảo vệ thiết bị; 4.2: Bảo vệ dữ liệu & quyền riêng tư; 4.3: Sức khỏe & an sinh số; 4.4: Bảo vệ môi trường; 5.1: Xử lý sự cố kỹ thuật; 5.2: Nhu cầu & giải pháp công nghệ; 5.3: Sáng tạo số; 6.1: Hiểu biết AI; 6.2: Sử dụng AI có đạo đức; 6.3: Đánh giá AI).
+     * Mức độ năng lực: Khối lớp 1, 2, 3 dùng "CB1" (Cơ bản 1); Khối lớp 4, 5 dùng "CB2" (Cơ bản 2).
+     * a, b, c, d: Ký hiệu chữ cái chỉ báo hành vi chuẩn (VD: a: "Xác định được cách tổ chức, lưu trữ và truy xuất dữ liệu, thông tin và nội dung một cách đơn giản trong môi trường số").
+   - VÍ DỤ CHUẨN TRONG PPCT VÀ GIÁO ÁN:
+     * Lớp 1-2-3 (CB1): [1.3.CB1a], [4.1.CB1a], [4.3.CB1a], [4.3.CB1b], [4.2.CB1a], [3.1.CB1a], [3.4.CB1a]
+     * Lớp 4-5 (CB2): [4.1.CB2a], [5.1.CB2a], [1.1.CB2a], [1.3.CB2a], [3.3.CB2a], [3.1.CB2a], [3.4.CB2a], [5.2.CB2b]
+   - TRÍCH DẪN & SOẠN TRỰC TIẾP: Ghi rõ mã NLS vào integrationNote và chỉ đạo cụ thể thao tác của học sinh trong hoạt động (ưu tiên Hoạt động 2 - Hình thành kiến thức hoặc Hoạt động 3 - Thực hành).
+
+3. TÍCH HỢP GIÁO DỤC STEM (THEO CÔNG VĂN 909/BGDĐT-GDTH & SGK/TÀI LIỆU BÀI HỌC STEM TIỂU HỌC):
+   - TỰ ĐỘNG NHẬN DẠNG BÀI HỌC STEM TƯƠNG ỨNG CHO LỚP ${grade} VÀ MÔN ${subject}:
+     * Lớp 1: Bài học STEM về Ngôi nhà hình học và Đồ chơi xếp hình; Chậu cây tự hút nước từ vật liệu tái chế; Đồ chơi chuyển động bằng dây thun.
+     * Lớp 2: Bài học STEM về Thước đo thông minh; Chong chóng gió và Dụng cụ đo hướng gió; Thùng phân loại rác mini cho góc học tập.
+     * Lớp 3: Bài học STEM về Bàn cờ toán học thông minh & Khung tranh đa năng; Bản đồ mê cung và Robot dẫn đường tuần tự; Cân đĩa thăng bằng tự chế.
+     * Lớp 4: Bài học STEM về Bình giữ nhiệt mini; Xe phản lực chạy bằng bóng bay / Cầu nâng thủy lực; Rạp chiếu bóng mini & Kính vạn hoa; Mô hình chuỗi thức ăn sinh thái.
+     * Lớp 5: Bài học STEM về Đèn ngủ thông minh & Ngôi nhà năng lượng xanh (pin mặt trời / quạt gió); Cột lọc nước tự nhiên 4 tầng (sỏi - cát - than - bông); Hộp quà hình học sinh thái & Thước đo góc đa năng.
+   - BẮT BUỘC THIẾT KẾ RÕ RÀNG 4 PHA STEM THEO TỪNG HOẠT ĐỘNG ĐỂ NGƯỜI KIỂM TRA DỄ NHẬN BIẾT:
+     * Hoạt động 1 (Khởi động): Ghi integrationNote = "[STEM - Pha 1: Xác định vấn đề thực tiễn & Tiêu chí sản phẩm STEM]". GV đặt ra bài toán/thách thức thực tế cần giải quyết và nêu rõ tiêu chí kỹ thuật của sản phẩm.
+     * Hoạt động 2 (Hình thành kiến thức): Ghi integrationNote = "[STEM - Pha 2: Nghiên cứu kiến thức nền & Đề xuất giải pháp thiết kế]". HS khám phá kiến thức SGK ${subject} Lớp ${grade}, liên hệ Toán/Khoa học/Công nghệ và phác thảo bản vẽ kỹ thuật.
+     * Hoạt động 3 (Luyện tập/Thực hành): Ghi integrationNote = "[STEM - Pha 3: Lựa chọn vật liệu, Chế tạo mẫu & Thử nghiệm]". HS thực hành đo đạc, cắt dán, lắp ráp sản phẩm, tiến hành thử nghiệm thực tế và ghi chép số liệu đo lường.
+     * Hoạt động 4 (Vận dụng/Trải nghiệm): Ghi integrationNote = "[STEM - Pha 4: Trưng bày, Đánh giá chất lượng & Cải tiến sản phẩm]". Các nhóm trưng bày sản phẩm, thuyết minh nguyên lý khoa học, đánh giá chéo theo tiêu chí và đề xuất hướng cải tiến tối ưu.
+   - TRÌNH BÀY CHI TIẾT TRONG TIẾN TRÌNH:
+     * "teacherAction": GV giao nhiệm vụ với tiêu chuẩn thông số cụ thể (kích thước cm, thời gian giữ nhiệt, góc quay, độ bền), hướng dẫn an toàn dụng cụ.
+     * "studentAction": HS thảo luận nhóm, phân công nhiệm vụ (thiết kế, đo đạc, lắp ráp), diễn giải nguyên lý khoa học và ghi nhật ký kết quả thử nghiệm.
+
+4. QUY TRÌNH THỰC HIỆN SOẠN TÍCH HỢP TRONG TỪNG HOẠT ĐỘNG:
+   - Bước 1: Rà soát thật kĩ bài dạy để chọn đúng hoạt động phù hợp (HĐ 1, 2, 3 hoặc 4).
+   - Bước 2: Ghi rõ nội dung cần tích hợp từ SGK vào trường "integrationNote" của Hoạt động (LessonActivity) và Nhiệm vụ (LessonTask).
+   - Bước 3: Soạn chi tiết lời giảng/lệnh giao việc của GV trong "teacherAction" và thao tác thực hiện/câu trả lời của HS trong "studentAction", đảm bảo thể hiện sâu sắc nội dung được tích hợp từ SGK.
+
+YÊU CẦU QUAN TRỌNG HÀNG ĐẦU VỀ QUY CHUẨN TRÌNH BÀY VÀ THAM CHIẾU SGK:
+1. TUYỆT ĐỐI KHÔNG ĐỀ CẬP ĐẾN TỆP ĐÌNH KÈM / TÊN FILE: CẤM BẤT KỲ CỤM TỪ NÀO NHƯ "(Tài liệu: xxx.pdf)", "tệp đính kèm", "file ảnh", "tải lên". Tài liệu đính kèm chỉ đóng vai trò tư liệu giúp bạn đọc SGK. Khi xuất ra giáo án chính thức, chỉ đề cập tới SGK.
+2. CHỈ RÕ TRANG SỐ VÀ HÌNH SỐ TRONG SGK RÕ RÀNG, MẠCH LẠC: Trong tất cả các hoạt động dạy học, khi giáo viên giao nhiệm vụ hay hướng dẫn học sinh, PHẢI VIẾT RÕ RÀNG VÀ CHỈ RÕ HÌNH SỐ VÀ TRANG SỐ TRONG SGK (Ví dụ: "GV yêu cầu học sinh làm việc theo cặp đôi, đọc thông tin và quan sát Hình 1, Hình 2 trong SGK trang 8 (mục 1)", "GV đặt câu hỏi gợi mở từ sơ đồ Hình 3 trang 9 SGK:...", "HS làm Bài tập 1 trang 10 SGK vào vở").
+
+YÊU CẦU ĐẶC BIỆT CHI TIẾT DÀNH CHO CẢ HOẠT ĐỘNG GIÁO VIÊN VÀ HỌC SINH:
+1. HOẠT ĐỘNG CỦA GIÁO VIÊN (teacherAction):
+   - ĐƯA RA YÊU CẦU CỰC KỲ CHI TIẾT VÀ ĐẦY ĐỦ NỘI DUNG SGK: Bao gồm trọn vẹn toàn bộ văn bản lý thuyết, câu hỏi gợi mở, bài tập, số liệu và ví dụ minh họa trong SGK. Tuyệt đối không viết tóm tắt hay lược bỏ nội dung SGK.
+   - DIỄN GIẢI TỈ MỈ VÀ DỄ HIỂU: Với từng nội dung hay yêu cầu trong SGK, Giáo viên cần có lời diễn giải chi tiết, bổ sung ví dụ thực tế gần gũi, giải thích từng bước thực hiện để học sinh dễ dàng tiếp thu kiến thức.
+   - Nêu nguyên văn lời giao nhiệm vụ, câu hỏi gợi mở chi tiết, lời giảng sinh động và cách giáo viên bao quát hỗ trợ từng nhóm/học sinh.
+
+2. HOẠT ĐỘNG CỦA HỌC SINH (studentAction):
+   - CÂU TRẢ LỜI VÀ PHẢN HỒI THẬT CHI TIẾT: Viết đầy đủ nguyên văn câu trả lời mẫu của học sinh, lời giải/đáp án chi tiết từng câu hỏi và bài tập trong SGK.
+   - DIỄN GIẢI BẰNG LỜI CỦA HỌC SINH ĐỂ RÕ RÀNG VÀ DỄ TIẾP THU: Học sinh không chỉ nêu đáp án mà còn phải diễn giải chi tiết lý do vì sao chọn đáp án đó, trình bày rõ từng bước tư duy và thao tác (Ví dụ: "Thưa thầy/cô, em chọn đáp án... vì... Đầu tiên em thực hiện bước 1..., sau đó bước 2...").
+   - THỂ HIỆN SỰ TƯƠNG TÁC CHỦ ĐỘNG: Học sinh chú ý theo dõi, trao đổi thảo luận cặp đôi/nhóm sôi nổi, đại diện phát biểu rõ ràng và biết nhận xét, bổ sung ý kiến cho bạn.
+3. Bám sát chuẩn kiến thức kỹ năng SGK Lớp ${grade}.
 
 Bài học gồm tổng cộng ${totalPeriods} tiết. Bạn PHẢI trả về mảng "periodPlans" gồm đúng ${totalPeriods} phần (mỗi phần dành cho 1 TIẾT RIÊNG BIỆT: Tiết 1, Tiết 2, v.v.).
 
@@ -654,10 +1123,10 @@ MỖI TIẾT PHẢI ĐỦ CẤU TRÚC 4 MỤC NHƯ SAU:
    - Thời gian thực hiện: .../..../.... đến.../..../....
 
 2. I. YÊU CẦU CẦN ĐẠT (Cho Tiết X):
-   - 1. Năng lực đặc thù: [Danh sách chi tiết]
+   - 1. Năng lực đặc thù: [Danh sách chi tiết các yêu cầu về kiến thức, kỹ năng bám sát SGK]
    - 2. Năng lực chung: [Tự chủ và tự học, Giao tiếp và hợp tác, Giải quyết vấn đề và sáng tạo]
    - 3. Phẩm chất: [Chăm chỉ, Trung thực, Trách nhiệm]
-   - 4. Nội dung tích hợp: [Mã NLS CV 3456 vd 1.3.CB1a, STEM CV 909, Công dân số CV 3899]
+   - 4. Nội dung tích hợp: [Mã NLS CV 3456 vd [1.3.CB1a], STEM CV 909 [STEM - Khám phá/Thực hành], Công dân số CV 3899]
 
 3. II. ĐỒ DÙNG DẠY HỌC (Cho Tiết X):
    - Giáo viên: [Máy tính, tivi/máy chiếu, bài giảng điện tử, SGK, đồ dùng...]
@@ -668,7 +1137,7 @@ MỖI TIẾT PHẢI ĐỦ CẤU TRÚC 4 MỤC NHƯ SAU:
    - Hoạt động 2: 2. Hình thành kiến thức mới (khoảng 15 phút)
    - Hoạt động 3: 3. Luyện tập, thực hành (khoảng 10 phút)
    - Hoạt động 4: 4. Vận dụng, trải nghiệm (khoảng 5 phút)
-   Mỗi hoạt động có các nhiệm vụ (* Nhiệm vụ 1: ..., * Nhiệm vụ 2: ...) và 4 bước quy trình sư phạm:
+   Mỗi hoạt động có "integrationNote" (nếu có tích hợp), các nhiệm vụ (* Nhiệm vụ 1: ..., * Nhiệm vụ 2: ... có "integrationNote") và 4 bước quy trình sư phạm:
    Bước 1: Chuyển giao nhiệm vụ <---> Bước 2: Thực hiện nhiệm vụ <---> Bước 3: Báo cáo kết quả <---> Bước 4: Đánh giá, kết luận.
 
 5. IV. ĐIỀU CHỈNH SAU BÀI DẠY (nếu có): ....................................................................................................
@@ -703,10 +1172,12 @@ Trả về duy nhất 1 JSON object hợp lệ (không có markdown code fence):
         {
           "activityNumber": 1,
           "activityName": "1. Khởi động (khoảng 5 phút)",
+          "integrationNote": "[TÍCH HỢP NLS/STEM/CĐS (nếu có)]",
           "tasks": [
             {
               "taskId": "task-1-1",
               "taskTitle": "* Nhiệm vụ 1: ...",
+              "integrationNote": "[Chi tiết tích hợp tại nhiệm vụ 1 (nếu có)]",
               "steps": [
                 {
                   "stepNumber": 1,
@@ -742,40 +1213,37 @@ Trả về duy nhất 1 JSON object hợp lệ (không có markdown code fence):
   ]
 }`;
 
-    let generateContents: any = prompt;
-    if (attachedFile && (attachedFile.base64Data || attachedFile.data)) {
-      const rawData = attachedFile.base64Data || attachedFile.data;
-      const cleanBase64 = rawData.replace(/^data:[^;]+;base64,/, '');
-      generateContents = [
-        {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                data: cleanBase64,
-                mimeType: attachedFile.mimeType || 'image/jpeg'
-              }
-            },
-            {
-              text: prompt
-            }
-          ]
-        }
-      ];
+    const filesToProcess: Array<{ base64Data?: string; data?: string; mimeType?: string }> = [];
+    if (Array.isArray(req.body.attachedFiles) && req.body.attachedFiles.length > 0) {
+      filesToProcess.push(...req.body.attachedFiles);
+    } else if (attachedFile && (attachedFile.base64Data || attachedFile.data)) {
+      filesToProcess.push(attachedFile);
     }
 
-    const rawText = await generateWithGemini(generateContents, customKey);
-
-    if (rawText) {
-      const cleaned = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-      try {
-        const plan = JSON.parse(cleaned);
-        if (plan && plan.periodPlans && plan.periodPlans.length > 0) {
-          return res.json({ success: true, plan });
+    let generateContents: any = prompt;
+    if (filesToProcess.length > 0) {
+      const parts: any[] = [];
+      for (const fileItem of filesToProcess) {
+        const rawData = fileItem.base64Data || fileItem.data;
+        if (rawData) {
+          const cleanBase64 = rawData.replace(/^data:[^;]+;base64,/, '');
+          parts.push({
+            inlineData: {
+              data: cleanBase64,
+              mimeType: fileItem.mimeType || 'image/jpeg'
+            }
+          });
         }
-      } catch (parseErr) {
-        console.warn('Failed to parse Gemini Lesson Plan JSON from AI text:', cleaned);
       }
+      parts.push({ text: prompt });
+      generateContents = [{ role: 'user', parts }];
+    }
+
+    const rawText = await generateWithGemini(generateContents, customKey, { responseMimeType: 'application/json' });
+
+    const plan = safeParseJSON(rawText);
+    if (plan && plan.periodPlans && Array.isArray(plan.periodPlans) && plan.periodPlans.length > 0) {
+      return res.json({ success: true, plan });
     }
 
     // Built-in standard pedagogical plan generator fallback (guaranteed never to fail)

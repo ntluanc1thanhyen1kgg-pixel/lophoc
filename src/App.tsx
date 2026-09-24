@@ -482,7 +482,7 @@ export default function App() {
             />
           )}
 
-          {state.currentPage === 'khdh' && <KhdhModule />}
+          {state.currentPage === 'khdh' && <KhdhModule currentUser={currentUser} />}
         </main>
       </div>
 

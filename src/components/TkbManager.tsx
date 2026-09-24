@@ -121,12 +121,16 @@ interface TkbManagerProps {
   timetable: TimetableSlot[];
   onUpdateTimetable: (slots: TimetableSlot[]) => void;
   onResetTimetable: () => void;
+  configuredClasses?: ConfiguredClass[];
+  onUpdateConfiguredClasses?: (classes: ConfiguredClass[]) => void;
 }
 
 export const TkbManager: React.FC<TkbManagerProps> = ({
   timetable,
   onUpdateTimetable,
-  onResetTimetable
+  onResetTimetable,
+  configuredClasses: propConfiguredClasses,
+  onUpdateConfiguredClasses
 }) => {
   const days = [2, 3, 4, 5, 6, 7]; // Thứ Hai -> Thứ Bảy
   const periods = [1, 2, 3, 4, 5]; // Tiết 1 -> 5
@@ -140,7 +144,7 @@ export const TkbManager: React.FC<TkbManagerProps> = ({
   } | null>(null);
 
   // Configured classes state for teacher
-  const [configuredClasses, setConfiguredClasses] = useState<ConfiguredClass[]>(() => {
+  const [localConfiguredClasses, setLocalConfiguredClasses] = useState<ConfiguredClass[]>(() => {
     try {
       const saved = localStorage.getItem('khdh_configured_classes_v1');
       if (saved) {
@@ -152,6 +156,15 @@ export const TkbManager: React.FC<TkbManagerProps> = ({
     }
     return DEFAULT_CONFIGURED_CLASSES;
   });
+
+  const configuredClasses = propConfiguredClasses || localConfiguredClasses;
+  const setConfiguredClasses = (newClasses: ConfiguredClass[]) => {
+    if (onUpdateConfiguredClasses) {
+      onUpdateConfiguredClasses(newClasses);
+    } else {
+      setLocalConfiguredClasses(newClasses);
+    }
+  };
 
   const [showClassConfigModal, setShowClassConfigModal] = useState<boolean>(false);
   const [isCustomClass, setIsCustomClass] = useState<boolean>(false);

@@ -63,6 +63,18 @@
         "ppctList": { "type": "array" },
         "timetable": { "type": "array" },
         "customizedWeeks": { "type": "object" },
+        "configuredClasses": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "updatedAt"]
+    },
+    "LessonPlanLibrary": {
+      "title": "Lesson Plan Library",
+      "description": "Collection of saved AI lesson plans per teacher",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "plans": { "type": "array" },
         "updatedAt": { "type": "string" }
       },
       "required": ["userId", "updatedAt"]
@@ -90,6 +102,10 @@
     "/khdh_data/{userId}": {
       "schema": "KhdhData",
       "description": "Teaching schedule & PPCT data per user"
+    },
+    "/lesson_plans/{userId}": {
+      "schema": "LessonPlanLibrary",
+      "description": "Saved lesson plans library per user"
     },
     "/system/{docId}": {
       "schema": "SystemConfig",

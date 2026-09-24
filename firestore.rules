@@ -22,6 +22,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Lesson plans collection
+    match /lesson_plans/{userId} {
+      allow read, write: if true;
+    }
+
     // System config collection
     match /system/{docId} {
       allow read, write: if true;

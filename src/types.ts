@@ -291,11 +291,18 @@ export interface LessonPlanWeek {
   rows: LessonPlanRow[];
 }
 
+export interface ConfiguredClass {
+  id: string;
+  name: string;
+  grade: number;
+}
+
 export interface KhdhDataState {
   config: SchoolConfig;
   ppctList: PpctItem[];
   timetable: TimetableSlot[];
   customizedWeeks: Record<number, LessonPlanRow[]>;
+  configuredClasses?: ConfiguredClass[];
 }
 
 // ==========================================
@@ -312,6 +319,7 @@ export interface LessonTaskStep {
 export interface LessonTask {
   taskId: string;
   taskTitle: string; // "* Nhiệm vụ 1: [Tên nhiệm vụ]" (in nghiêng)
+  integrationNote?: string; // Ghi rõ nội dung tích hợp (NLS, STEM, Công dân số) tại nhiệm vụ này
   steps: LessonTaskStep[];
 }
 
@@ -319,6 +327,7 @@ export interface LessonActivity {
   activityNumber: number; // 1 -> 4
   activityName: string; // "1. Khởi động (khoảng 5 phút)", "2. Hình thành kiến thức mới (khoảng 15 phút)", "3. Luyện tập, thực hành (khoảng 10 phút)", "4. Vận dụng, trải nghiệm (khoảng 5 phút)"
   timeEstimate?: string;
+  integrationNote?: string; // Ghi rõ nội dung tích hợp (NLS, STEM, Công dân số) được phân bổ vào hoạt động này
   tasks: LessonTask[];
 }
 
